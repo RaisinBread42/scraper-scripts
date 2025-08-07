@@ -14,7 +14,7 @@ async def main():
 
         config = CrawlerRunConfig(
             # e.g., first 30 items from Hacker News
-            css_selector="main#main",
+            css_selector="div#postpro",
             markdown_generator = cleaned_md_generator,
             wait_for_images = True,
             scan_full_page = True,
@@ -22,7 +22,7 @@ async def main():
         )
 
         urls = [
-            "https://www.remax.ky/listings/?sort=Latest"
+            "https://www.crightonproperties.com/all-listings/residential-home-apartments-condos/filterby_N"
         ]
 
         results = await crawler.arun_many(urls=urls, config=config)
