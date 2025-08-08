@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
-from utilities.supabase_utils import save_to_supabase, deduplicate_listings
+from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type
 
 # Load environment variables from .env file
 load_dotenv()  # Add this line
@@ -31,11 +31,21 @@ def parse_markdown_list(md_text):
         currency = match.group(3)
         price = match.group(4).replace(",", "")
         link = match.group(5).strip()
+        
+        # Extract property type from CIREBA URL structure
+        # URL format: /property-detail/{location}/{property-type}-for-sale-in-cayman-islands/{property-name}
+        url_match = re.search(r'/property-detail/[^/]+/([^-]+)-properties?-for-sale-in-cayman-islands/', link)
+        if url_match:
+            url_type = url_match.group(1)
+            listing_type = normalize_listing_type(url_type)
+        else:
+            listing_type = normalize_listing_type(name)  # Fallback to name
         results.append({
             "name": name,
             "currency": currency,
             "price": price,
-            "link": link
+            "link": link,
+            "listing_type": listing_type
         })
     return results
 

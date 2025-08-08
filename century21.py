@@ -6,15 +6,15 @@ import os
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
-from utilities.supabase_utils import save_to_supabase, deduplicate_listings
+from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type
 
 # Load environment variables from .env file
 load_dotenv()  # Add this line
 
 def parse_markdown_list(md_text):
     """
-    Extracts name, price, currency, and link from Century21 Cayman markdown.
-    Returns a list of dicts: {name, price, currency, link}
+    Extracts name, price, currency, link, and listing type from Century21 Cayman markdown.
+    Returns a list of dicts: {name, price, currency, link, listing_type}
     """
     import re
 
@@ -42,11 +42,17 @@ def parse_markdown_list(md_text):
         link = name_links[i].group(2).strip()
         currency = prices[i].group(1)
         price = prices[i].group(2).replace(",", "")
+        
+        # Extract listing type from the name - Century21 includes property type in the name
+        # e.g. "Ritz - Carlton Deckhouse 9 West Bay (Grand Cayman) Single Family Homes"
+        listing_type = normalize_listing_type(name)
+        
         results.append({
             "name": name,
             "currency": currency,
             "price": price,
-            "link": link
+            "link": link,
+            "listing_type": listing_type
         })
     return results
 

@@ -1,34 +1,10 @@
 import re
-import asyncio
-from supabase import create_client, Client
-import json
-import os
-from dotenv import load_dotenv 
-from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
-from typing import List, Dict
-from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type
-
-# Load environment variables from .env file
-load_dotenv()  # Add this line
-
-def convert_ci_to_usd(price_str, currency):
-    """Convert CI$ to USD using exact rate: 1 CI$ = 1.2195121951219512195121951219512 USD"""
-    if currency == "CI$" and price_str:
-        try:
-            ci_amount = float(price_str.replace(",", ""))
-            usd_amount = ci_amount * 1.2195121951219512195121951219512
-            return "US$", str(round(usd_amount, 2))
-        except ValueError:
-            return currency, price_str
-    return currency, price_str
 
 def parse_markdown_list(md_text):
     """
     Extracts condo, residential, and land listings from Azure Realty Cayman markdown.
     Returns a list of dicts: {name, price, currency, link, listing_type, image_link}
     """
-    import re
-
     results = []
     
     # Pattern for condo listings:
@@ -80,8 +56,6 @@ def parse_markdown_list(md_text):
         if price_match:
             currency = price_match.group(1)
             price = price_match.group(2).replace(",", "")
-            # Convert CI$ to USD
-            currency, price = convert_ci_to_usd(price, currency)
         else:
             currency = ""
             price = ""
@@ -123,8 +97,6 @@ def parse_markdown_list(md_text):
         if price_match:
             currency = price_match.group(1)
             price = price_match.group(2).replace(",", "")
-            # Convert CI$ to USD
-            currency, price = convert_ci_to_usd(price, currency)
         else:
             currency = ""
             price = ""
@@ -166,8 +138,6 @@ def parse_markdown_list(md_text):
         if price_match:
             currency = price_match.group(1)
             price = price_match.group(2).replace(",", "")
-            # Convert CI$ to USD
-            currency, price = convert_ci_to_usd(price, currency)
         else:
             currency = ""
             price = ""
@@ -183,50 +153,43 @@ def parse_markdown_list(md_text):
     
     return results
 
-async def main():
-    # Create an instance of AsyncWebCrawler
-    async with AsyncWebCrawler() as crawler:
-        # Run the crawler on a URL
-
-        cleaned_md_generator = DefaultMarkdownGenerator(
-            content_source="cleaned_html",  # This is the default
-        )
-
-        config = CrawlerRunConfig(
-            # e.g., first 30 items from Hacker News
-            css_selector="div#Gridbody",
-            markdown_generator = cleaned_md_generator,
-            wait_for_images = True,
-            scan_full_page = True,
-            scroll_delay=0.5, 
-        )
-
-        urls = [
-            "https://www.azurerealtycayman.com/condos-for-sale-in-cayman-islands/filterby_N",
-            "https://www.azurerealtycayman.com/cayman-islands-residential-properties-for-sale/filterby_N",
-            "https://www.azurerealtycayman.com/cayman-islands-land-for-sale/filterby_N"
-        ]
-
-        results = await crawler.arun_many(urls=urls, config=config)
-        
-        # Process each crawled page
-        all_listings = []
-        for i, result in enumerate(results):
-            if result.success:
-                print(f"Processing page {i+1}: {urls[i]}")
-                
-                # Parse the markdown content
-                parsed_listings = parse_markdown_list(result.markdown)
-                all_listings.extend(parsed_listings)
-                
-                # Save each page's results to Supabase
-                save_to_supabase(urls[i], deduplicate_listings(parsed_listings))
-                
-                print(f"Found {len(parsed_listings)} listings on page {i+1}")
-            else:
-                print(f"Failed to crawl page {i+1}: {urls[i]}")
-        
-        print(f"\nTotal listings found: {len(all_listings)}")
-
-# Run the async main function
-asyncio.run(main())
+# Test the function
+try:
+    with open('crawl_results.md', 'r', encoding='utf-8') as f:
+        md_content = f.read()
+    
+    # Debug: Let's see all lines with each type
+    lines = md_content.split('\n')
+    condo_lines = [line for line in lines if 'Condo' in line and 'View Property Details' in line]
+    residential_lines = [line for line in lines if 'Residential' in line and 'View Property Details' in line]
+    land_lines = [line for line in lines if 'Land' in line and 'View Property Details' in line]
+    
+    print(f"Found {len(condo_lines)} condo lines")
+    print(f"Found {len(residential_lines)} residential lines") 
+    print(f"Found {len(land_lines)} land lines")
+    print("="*80)
+    
+    listings = parse_markdown_list(md_content)
+    
+    print(f"Total listings extracted: {len(listings)}")
+    print("="*60)
+    
+    condo_count = len([l for l in listings if l['listing_type'] == 'Condo'])
+    home_count = len([l for l in listings if l['listing_type'] == 'Home'])
+    land_count = len([l for l in listings if l['listing_type'] == 'Land'])
+    
+    print(f"Condos: {condo_count}")
+    print(f"Homes: {home_count}")
+    print(f"Land: {land_count}")
+    print()
+    
+    for i, listing in enumerate(listings, 1):
+        print(f"{i}. {listing['name']} ({listing['listing_type']})")
+        print(f"   Price: {listing['currency']}{listing['price']}")
+        print(f"   Link: {listing['link']}")
+        print()
+    
+except FileNotFoundError:
+    print("crawl_results.md file not found!")
+except Exception as e:
+    print(f"Error: {e}")

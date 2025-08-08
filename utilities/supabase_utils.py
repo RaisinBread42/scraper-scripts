@@ -2,6 +2,52 @@ import os
 from supabase import create_client, Client
 from typing import List, Dict
 
+def normalize_listing_type(raw_type):
+    """
+    Normalize property type to standard categories:
+    Home, Land, Condo, Apartment, Townhouse, Commercial, Multi Unit, Duplex
+    """
+    if not raw_type:
+        return 'Home'  # Default
+    
+    raw_type = raw_type.lower().strip()
+    
+    # Land types
+    if any(keyword in raw_type for keyword in ['land', 'lot', 'vacant']):
+        return 'Land'
+    
+    # Commercial
+    elif 'commercial' in raw_type:
+        return 'Commercial'
+    
+    # Multi Unit
+    elif any(keyword in raw_type for keyword in ['multi unit', 'multi-unit']):
+        return 'Multi Unit'
+    
+    # Duplex
+    elif 'duplex' in raw_type:
+        return 'Duplex'
+    
+    # Triplex
+    elif 'triplex' in raw_type:
+        return 'Triplex'
+    
+    # Townhouse
+    elif 'townhouse' in raw_type:
+        return 'Townhouse'
+    
+    # Condo
+    elif any(keyword in raw_type for keyword in ['condo', 'condominium', 'unit']):
+        return 'Condo'
+    
+    # Apartment
+    elif 'apartment' in raw_type:
+        return 'Apartment'
+    
+    # Default fallback
+    else:
+        return 'Home'
+
 def deduplicate_listings(listings):
     """
     Removes duplicates from a list of dicts based on name, price, and currency.

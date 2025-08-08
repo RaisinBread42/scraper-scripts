@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
-from utilities.supabase_utils import save_to_supabase, deduplicate_listings
+from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type
 
 # Load environment variables from .env file
 load_dotenv()  # Add this line
@@ -22,11 +22,16 @@ def parse_markdown_list(md_text):
         currency = match.group(2)
         price = match.group(3).replace(",", "")
         link = match.group(4)
+        
+        # Extract listing type from the name
+        listing_type = normalize_listing_type(name)
+        
         results.append({
             "name": name,
             "currency": currency,
             "price": price,
-            "link": link
+            "link": link,
+            "listing_type": listing_type
         })
     return results
 

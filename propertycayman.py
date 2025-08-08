@@ -6,15 +6,15 @@ import os
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
-from utilities.supabase_utils import save_to_supabase, deduplicate_listings
+from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type
 
 # Load environment variables from .env file
 load_dotenv()  # Add this line
 
 def parse_markdown_list(md_text):
     """
-    Extracts name, price, currency, and link from Property Cayman markdown.
-    Returns a list of dicts: {name, price, currency, link}
+    Extracts name, price, currency, link, and listing type from Property Cayman markdown.
+    Returns a list of dicts: {name, price, currency, link, listing_type}
     """
     import re
 
@@ -31,11 +31,21 @@ def parse_markdown_list(md_text):
         price = match.group(2).replace(",", "")
         name = match.group(3).strip()
         link = match.group(4).strip()
+        
+        # Extract listing type from URL path or name
+        # PropertyCayman URLs have structure like /buy/condo/, /buy/house/, etc.
+        url_type_match = re.search(r'/buy/([^/]+)', link)
+        if url_type_match:
+            listing_type = normalize_listing_type(url_type_match.group(1))
+        else:
+            listing_type = normalize_listing_type(name)
+        
         results.append({
             "name": name,
             "currency": currency,
             "price": price,
-            "link": link
+            "link": link,
+            "listing_type": listing_type
         })
     return results
 

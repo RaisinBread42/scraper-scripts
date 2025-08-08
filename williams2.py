@@ -2,7 +2,7 @@ import asyncio
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
-from utilities.supabase_utils import save_to_supabase, deduplicate_listings
+from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type
 
 # Load environment variables from .env file
 load_dotenv()  # Add this line
@@ -25,11 +25,13 @@ def parse_markdown_list(md_text):
         link = match.group(1).strip()
         price = match.group(2).replace(",", "").split(".")[0]  # Remove commas and decimals
         name = match.group(3).strip()
+        listing_type = normalize_listing_type(name)
         results.append({
             "name": name,
             "currency": "KYD",
             "price": price,
-            "link": link
+            "link": link,
+            "listing_type": listing_type
         })
     return results
 

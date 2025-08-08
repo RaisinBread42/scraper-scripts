@@ -14,24 +14,31 @@ async def main():
 
         config = CrawlerRunConfig(
             # e.g., first 30 items from Hacker News
-            css_selector="div#grid-view",
+            css_selector="div#Gridbody",
             markdown_generator = cleaned_md_generator,
             wait_for_images = True,
             scan_full_page = True,
             scroll_delay=0.5, 
         )
 
+        # URLs collected from all Python scripts in the root directory
         urls = [
-            "https://www.cireba.com/cayman-islands-real-estate-listings/filterby_N"
+            # From azurerealty.py
+            "https://www.azurerealtycayman.com/cayman-islands-land-for-sale/filterby_N",
+
         ]
 
         results = await crawler.arun_many(urls=urls, config=config)
 
-         # Loop through results and print markdown
-        for result in results:
-            print(f"Markdown for {result.url}:\n")
-            print(result.markdown)
-            print("\n" + "="*80 + "\n")
+        # Save results to markdown file
+        with open('crawl_results.md', 'w', encoding='utf-8') as f:
+            for i, result in enumerate(results, 1):
+                f.write(result.markdown)
+
+                # Also print to console for immediate feedback
+                print(f"Processed {i}/{len(results)}: {result.url}")
+
+        print(f"\nResults saved to 'crawl_results.md'")
 
 # Run the async main function
 asyncio.run(main())

@@ -6,15 +6,15 @@ import os
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
-from utilities.supabase_utils import save_to_supabase, deduplicate_listings
+from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type
 
 # Load environment variables from .env file
 load_dotenv()  # Add this line
 
 def parse_markdown_list(md_text):
     """
-    Extracts name, price, currency, and link from Mod Realty Cayman markdown.
-    Returns a list of dicts: {name, price, currency, link}
+    Extracts name, price, currency, link, and listing type from Mod Realty Cayman markdown.
+    Returns a list of dicts: {name, price, currency, link, listing_type}
     """
     import re
 
@@ -37,11 +37,17 @@ def parse_markdown_list(md_text):
         else:
             currency = ""
             price = ""
+        
+        # Extract listing type from the name - ModRealty includes property type in the name
+        # e.g. "Luxury Turnkey 3-Bedroom at ARZA – West Bay" or "Prime 0.31-Acre Lot"
+        listing_type = normalize_listing_type(name)
+        
         results.append({
             "name": name,
             "currency": currency,
             "price": price,
-            "link": link
+            "link": link,
+            "listing_type": listing_type
         })
     return results
 
