@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
-from utilities.supabase_utils import save_to_supabase
+from utilities.supabase_utils import save_to_supabase, deduplicate_listings
 
 # Load environment variables from .env file
 load_dotenv()  # Add this line
@@ -18,19 +18,19 @@ def parse_markdown_list(md_text):
     """
     import re
 
-    # Regex to match the property summary block
-    # Example: [ MLS#: 419608 Sandscape Residences #19 ... CI$330,000 ](https://www.cireba.com/property-detail/... "...")
-    pattern = re.compile(
-        r'\[ MLS#:\s*\d+\s+(.*?)\s*[\s\S]*?(CI\$|US\$)\s*([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s]+)[^)]*\)',
-        re.IGNORECASE
+    # Pattern for the property block
+    block_pattern = re.compile(
+        r'\[ MLS#: \d+\s+([^\n]+).*?\n\n([^\[\n]+)\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)',
+        re.DOTALL
     )
 
     results = []
-    for match in pattern.finditer(md_text):
+    for match in block_pattern.finditer(md_text):
         name = match.group(1).strip()
-        currency = match.group(2)
-        price = match.group(3).replace(",", "")
-        link = match.group(4)
+        # location = match.group(2).strip()  # Not used, but available
+        currency = match.group(3)
+        price = match.group(4).replace(",", "")
+        link = match.group(5).strip()
         results.append({
             "name": name,
             "currency": currency,
@@ -76,7 +76,7 @@ async def main():
                 all_listings.extend(parsed_listings)
                 
                 # Save each page's results to Supabase
-                save_to_supabase(urls[i], parsed_listings)
+                save_to_supabase(urls[i], deduplicate_listings(parsed_listings))
                 
                 print(f"Found {len(parsed_listings)} listings on page {i+1}")
             else:

@@ -2,6 +2,20 @@ import os
 from supabase import create_client, Client
 from typing import List, Dict
 
+def deduplicate_listings(listings):
+    """
+    Removes duplicates from a list of dicts based on name, price, and currency.
+    Returns a new list with unique listings.
+    """
+    seen = set()
+    unique = []
+    for item in listings:
+        key = (item.get("name"), item.get("price"), item.get("currency"))
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique
+
 def save_to_supabase(target_url: str, results: List[Dict]) -> bool:
     """Save scraping results to Supabase table."""
     try:

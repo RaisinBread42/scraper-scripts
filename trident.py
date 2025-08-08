@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
-from utilities.supabase_utils import save_to_supabase
+from utilities.supabase_utils import save_to_supabase, deduplicate_listings
 
 # Load environment variables from .env file
 load_dotenv()  # Add this line
@@ -83,7 +83,7 @@ async def main():
                 all_listings.extend(parsed_listings)
                 
                 # Save each page's results to Supabase
-                save_to_supabase(urls[i], parsed_listings)
+                save_to_supabase(urls[i], deduplicate_listings(parsed_listings))
                 
                 print(f"Found {len(parsed_listings)} listings on page {i+1}")
             else:
