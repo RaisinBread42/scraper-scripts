@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
-from supabase_utils import save_to_supabase
+from utilities.supabase_utils import save_to_supabase
 
 # Load environment variables from .env file
 load_dotenv()  # Add this line

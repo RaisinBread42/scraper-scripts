@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
-from supabase_utils import save_to_supabase
+from utilities.supabase_utils import save_to_supabase
 
 # Load environment variables from .env file
 load_dotenv()  # Add this line
@@ -18,18 +18,17 @@ def parse_markdown_list(md_text):
     """
     import re
 
-    # Regex to match: [ ![NAME](IMG) ](LINK "NAME")
-    img_link_pattern = re.compile(
-        r'\[ !\[\s*(.*?)\]\([^\)]*\) \]\((https://www\.tridentproperties\.ky/property-detail/[^\s]+) "(.*?)"\)'
+    # Match property name and link from the markdown heading
+    name_link_pattern = re.compile(
+        r'##\s*\[([^\]]+)\]\((https://www\.tridentproperties\.ky/property-detail/[^\s)]+)', re.IGNORECASE
     )
-    # Regex to match price (CI$ or US$) after the image block
+    # Match price (CI$ or US$) after the property block
     price_pattern = re.compile(r'(CI\$|US\$)\s*([\d,\.]+)')
 
     results = []
-    for match in img_link_pattern.finditer(md_text):
+    for match in name_link_pattern.finditer(md_text):
         name = match.group(1).strip()
         link = match.group(2).strip()
-        # Find the price after this match
         after = md_text[match.end():]
         price_match = price_pattern.search(after)
         if price_match:
