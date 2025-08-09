@@ -11,19 +11,30 @@ from utilities.supabase_utils import save_to_supabase, deduplicate_listings, nor
 # Load environment variables from .env file
 load_dotenv()  # Add this line
 
+def convert_ci_to_usd(price_str, currency):
+    """Convert CI$ to USD using exact rate: 1 CI$ = 1.2195121951219512195121951219512 USD"""
+    if currency == "CI$" and price_str:
+        try:
+            ci_amount = float(price_str.replace(",", ""))
+            usd_amount = ci_amount * 1.2195121951219512195121951219512
+            return "US$", str(round(usd_amount, 2))
+        except ValueError:
+            return currency, price_str
+    return currency, price_str
+
 def parse_markdown_list(md_text):
     """
-    Extracts name, price, currency, link, and listing type from Century21 Cayman markdown.
-    Returns a list of dicts: {name, price, currency, link, listing_type}
+    Extracts name, price, currency, link, listing type, and image_link from Century21 Cayman markdown.
+    Returns a list of dicts: {name, price, currency, link, listing_type, image_link}
     """
     import re
 
     # Find all image links (each property starts with this)
     img_link_pattern = re.compile(
-        r'\[ !\[(.*?)\]\([^\)]*\) \]\((https://century21cayman\.com/en/d/[^\s]+) "[^"]*"\)', re.IGNORECASE
+        r'\[ !\[(.*?)\]\(([^\)]*)\) \]\((https://century21cayman\.com/en/d/[^\s]+) "[^"]*"\)', re.IGNORECASE
     )
-    # Find all price lines (US$ 25,000,000 or CI$ 3,950,000)
-    price_pattern = re.compile(r'(US\$|CI\$)\s*([\d,]+(?:\.\d+)?)')
+    # Find all price lines (US$ 25,000,000 or CI$ 3,950,000, handles ¹ footnote)
+    price_pattern = re.compile(r'(US\$|CI\$)\s*([\d,]+(?:\.\d+)?)(?:¹)?')
 
     # Find all property name/URL blocks (##  [ ... ](URL "title"))
     name_link_pattern = re.compile(
@@ -42,17 +53,37 @@ def parse_markdown_list(md_text):
         link = name_links[i].group(2).strip()
         currency = prices[i].group(1)
         price = prices[i].group(2).replace(",", "")
+        image_link = img_links[i].group(2).strip()
         
-        # Extract listing type from the name - Century21 includes property type in the name
-        # e.g. "Ritz - Carlton Deckhouse 9 West Bay (Grand Cayman) Single Family Homes"
-        listing_type = normalize_listing_type(name)
+        # Convert CI$ to USD
+        currency, price = convert_ci_to_usd(price, currency)
+        
+        # Determine listing type from the name
+        if "Condos/Apartments" in name:
+            listing_type = "Condo"
+        elif "Single Family Homes" in name:
+            listing_type = "Home"
+        elif "Vacant Land" in name:
+            listing_type = "Land"
+        else:
+            # Fallback - try to determine from image link text
+            image_title = img_links[i].group(1).strip()
+            if "Condos/Apartments" in image_title:
+                listing_type = "Condo"
+            elif "Single Family Homes" in image_title:
+                listing_type = "Home"
+            elif "Vacant Land" in image_title:
+                listing_type = "Land"
+            else:
+                listing_type = "Home"  # Default fallback
         
         results.append({
             "name": name,
             "currency": currency,
             "price": price,
             "link": link,
-            "listing_type": listing_type
+            "listing_type": listing_type,
+            "image_link": image_link
         })
     return results
 
@@ -75,9 +106,15 @@ async def main():
         )
 
         urls = [
-            "https://century21cayman.com/en/s/for-sale/new-listing",
-            "https://century21cayman.com/en/s/for-sale/new-listing/hga/2",
-            "https://century21cayman.com/en/s/for-sale/new-listing/hga/3"
+            "https://century21cayman.com/en/s/for-sale/condos-apartments/new-listing/hga-usd",
+            "https://century21cayman.com/en/s/for-sale/condos-apartments/new-listing/hga-usd/2",
+            "https://century21cayman.com/en/s/for-sale/condos-apartments/new-listing/hga-usd/3",
+            "https://century21cayman.com/en/s/for-sale/single-family-homes/new-listing/hga-usd",
+            "https://century21cayman.com/en/s/for-sale/single-family-homes/new-listing/hga-usd/2",
+            "https://century21cayman.com/en/s/for-sale/single-family-homes/new-listing/hga-usd/3",
+            "https://century21cayman.com/en/s/for-sale/vacant-land/new-listing/hga-usd",
+            "https://century21cayman.com/en/s/for-sale/vacant-land/new-listing/hga-usd/2",
+            "https://century21cayman.com/en/s/for-sale/vacant-land/new-listing/hga-usd/3"            
         ]
 
         results = await crawler.arun_many(urls=urls, config=config)

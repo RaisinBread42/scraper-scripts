@@ -1,3 +1,4 @@
 .env
 __pycache__/supabase_utils.cpython-313.pyc
 utilities/__pycache__/supabase_utils.cpython-313.pyc
+crawl_results.md
