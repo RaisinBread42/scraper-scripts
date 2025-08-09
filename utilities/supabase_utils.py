@@ -50,13 +50,13 @@ def normalize_listing_type(raw_type):
 
 def deduplicate_listings(listings):
     """
-    Removes duplicates from a list of dicts based on property name only.
+    Removes duplicates from a list of dicts based on property link.
     Returns a new list with unique listings.
     """
     seen = set()
     unique = []
     for item in listings:
-        key = item.get("name")
+        key = item.get("link")
         if key not in seen:
             seen.add(key)
             unique.append(item)

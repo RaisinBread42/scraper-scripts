@@ -22,6 +22,150 @@ def convert_ci_to_usd(price_str, currency):
             return currency, price_str
     return currency, price_str
 
+def parse_little_cayman_listings(md_text, url=None):
+    """
+    Extracts Little Cayman listings from markdown.
+    Returns a list of dicts: {name, price, currency, link, listing_type, image_link}
+    """
+    import re
+    
+    # Pattern for Little Cayman listings:
+    # [ MLS#: NUMBER TITLE
+    #   * SQFT SqFt
+    #   * BEDS Beds
+    #   * BATHS Baths
+    #
+    # LOCATION, Little Cayman PRICE ](LINK "TITLE")
+    block_pattern = re.compile(
+        r'\[ MLS#: (\d+)\s+([^\n]*?)\n\s*\*[^\n]*\n\s*\*[^\n]*\n\s*\*[^\n]*\n\n([^,\n]+),\s*Little Cayman\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
+        re.MULTILINE | re.DOTALL
+    )
+
+    # Pattern to find image links before each property block
+    image_pattern = re.compile(
+        r'\[ !\[([^\]]*)\]\(([^)]*)\) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)'
+    )
+
+    # Find all image links
+    image_matches = list(image_pattern.finditer(md_text))
+    
+    results = []
+    for match in block_pattern.finditer(md_text):
+        mls_number = match.group(1)
+        name = match.group(2).strip()
+        location = match.group(3).strip()
+        currency = match.group(4)
+        price = match.group(5).replace(",", "")
+        link = match.group(6).strip()
+        
+        # Convert CI$ to USD
+        currency, price = convert_ci_to_usd(price, currency)
+        
+        # Find the first image for this property (look for matching link)
+        image_link = ""
+        for img_match in image_matches:
+            if img_match.group(3) == link:
+                image_link = img_match.group(2)
+                break
+        
+        # Determine listing type based on URL - using same logic as main function
+        if url and "listingtype_14" in url:
+            listing_type = "Condo"
+        elif url and "listingtype_4" in url:
+            listing_type = "Home"
+        elif url and "listingtype_5" in url:
+            listing_type = "Duplex"
+        else:
+            # Fallback - try to determine from URL structure
+            if "/residential-condo/" in link or "condo" in name.lower():
+                listing_type = "Condo"
+            elif "duplex" in name.lower():
+                listing_type = "Duplex"
+            else:
+                listing_type = "Home"
+        
+        results.append({
+            "name": name,
+            "currency": currency,
+            "price": price,
+            "link": link,
+            "listing_type": listing_type,
+            "image_link": image_link
+        })
+    return results
+
+def parse_cayman_brac_listings(md_text, url=None):
+    """
+    Extracts Cayman Brac listings from markdown.
+    Returns a list of dicts: {name, price, currency, link, listing_type, image_link}
+    """
+    import re
+    
+    # Pattern for Cayman Brac listings:
+    # [ MLS#: NUMBER TITLE
+    #   * SQFT SqFt
+    #   * BEDS Beds
+    #   * BATHS Baths
+    #
+    # LOCATION, Cayman Brac PRICE ](LINK "TITLE")
+    block_pattern = re.compile(
+        r'\[ MLS#: (\d+)\s+([^\n]*?)\n\s*\*[^\n]*\n\s*\*[^\n]*\n\s*\*[^\n]*\n\n([^,\n]+),\s*Cayman Brac\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
+        re.MULTILINE | re.DOTALL
+    )
+
+    # Pattern to find image links before each property block
+    image_pattern = re.compile(
+        r'\[ !\[([^\]]*)\]\(([^)]*)\) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)'
+    )
+
+    # Find all image links
+    image_matches = list(image_pattern.finditer(md_text))
+    
+    results = []
+    for match in block_pattern.finditer(md_text):
+        mls_number = match.group(1)
+        name = match.group(2).strip()
+        location = match.group(3).strip()
+        currency = match.group(4)
+        price = match.group(5).replace(",", "")
+        link = match.group(6).strip()
+        
+        # Convert CI$ to USD
+        currency, price = convert_ci_to_usd(price, currency)
+        
+        # Find the first image for this property (look for matching link)
+        image_link = ""
+        for img_match in image_matches:
+            if img_match.group(3) == link:
+                image_link = img_match.group(2)
+                break
+        
+        # Determine listing type based on URL - using same logic as main function
+        if url and "listingtype_14" in url:
+            listing_type = "Condo"
+        elif url and "listingtype_4" in url:
+            listing_type = "Home"
+        elif url and "listingtype_5" in url:
+            listing_type = "Duplex"
+        else:
+            # Fallback - try to determine from URL structure
+            if "/residential-condo/" in link or "condo" in name.lower():
+                listing_type = "Condo"
+            elif "duplex" in name.lower():
+                listing_type = "Duplex"
+            else:
+                listing_type = "Home"
+        
+        results.append({
+            "name": name,
+            "currency": currency,
+            "price": price,
+            "link": link,
+            "listing_type": listing_type,
+            "image_link": image_link
+        })
+    return results
+
 def parse_markdown_list(md_text, url=None):
     """
     Extracts name, price, currency, link, listing_type, and image_link from CIREBA markdown.
@@ -92,6 +236,15 @@ def parse_markdown_list(md_text, url=None):
             "listing_type": listing_type,
             "image_link": image_link
         })
+    
+    # Parse Little Cayman listings and add to results
+    little_cayman_results = parse_little_cayman_listings(md_text, url)
+    results.extend(little_cayman_results)
+    
+    # Parse Cayman Brac listings and add to results
+    cayman_brac_results = parse_cayman_brac_listings(md_text, url)
+    results.extend(cayman_brac_results)
+    
     return results
 
 async def main():
@@ -116,7 +269,7 @@ async def main():
             "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N",
             "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#2",
             "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N#2"
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N#2",
             "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_5/filterby_N",
             "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_5/filterby_N#2"
         ]

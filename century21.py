@@ -102,7 +102,7 @@ async def main():
             markdown_generator = cleaned_md_generator,
             wait_for_images = True,
             scan_full_page = True,
-            scroll_delay=0.5, 
+            scroll_delay=2, 
         )
 
         urls = [
