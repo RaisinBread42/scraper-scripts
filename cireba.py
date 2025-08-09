@@ -29,11 +29,16 @@ def parse_markdown_list(md_text, url=None):
     """
     import re
 
-    # Pattern for the property block - new format:
-    # [ MLS#: NUMBER TITLE * SQFT * BEDS * BATHS LOCATION PRICE ](LINK "TITLE")
+    # Updated pattern for the property block based on new format:
+    # [ MLS#: NUMBER TITLE
+    #   * SQFT SqFt
+    #   * BEDS Beds
+    #   * BATHS Baths
+    #
+    # LOCATION, Grand Cayman PRICE ](LINK "TITLE")
     block_pattern = re.compile(
-        r'\[ MLS#: (\d+)\s+([^\n]*?)\s*\*[^*]*\*[^*]*\*[^*]*\n*([^,\n]*),\s*Grand Cayman\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
-        re.DOTALL
+        r'\[ MLS#: (\d+)\s+([^\n]*?)\n\s*\*[^\n]*\n\s*\*[^\n]*\n\s*\*[^\n]*\n\n([^,\n]+),\s*Grand Cayman\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
+        re.MULTILINE | re.DOTALL
     )
 
     # Pattern to find image links before each property block
@@ -63,7 +68,7 @@ def parse_markdown_list(md_text, url=None):
                 image_link = img_match.group(2)
                 break
         
-        # Determine listing type based on URL
+        # Determine listing type based on URL - listingtype_14 is Home
         if url and "listingtype_14" in url:
             listing_type = "Condo"
         elif url and "listingtype_4" in url:
