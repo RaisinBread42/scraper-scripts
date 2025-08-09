@@ -25,7 +25,7 @@ def convert_ci_to_usd(price_str, currency):
 def parse_little_cayman_listings(md_text, url=None):
     """
     Extracts Little Cayman listings from markdown.
-    Returns a list of dicts: {name, price, currency, link, listing_type, image_link}
+    Returns a list of dicts: {name, price, currency, link, listing_type, image_link, mls_number, sqft, beds, baths, location}
     """
     import re
     
@@ -37,7 +37,7 @@ def parse_little_cayman_listings(md_text, url=None):
     #
     # LOCATION, Little Cayman PRICE ](LINK "TITLE")
     block_pattern = re.compile(
-        r'\[ MLS#: (\d+)\s+([^\n]*?)\n\s*\*[^\n]*\n\s*\*[^\n]*\n\s*\*[^\n]*\n\n([^,\n]+),\s*Little Cayman\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
+        r'\[ MLS#: (\d+)\s+([^\n]*?)\n\s*\*\s*([\d,]+)\s+SqFt\n\s*\*\s*(\d+(?:\.\d+)?)\s+Beds?\n\s*\*\s*(\d+(?:\.\d+)?)\s+Baths?\n\n([^,\n]+),\s*Little Cayman\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
         re.MULTILINE | re.DOTALL
     )
 
@@ -53,10 +53,13 @@ def parse_little_cayman_listings(md_text, url=None):
     for match in block_pattern.finditer(md_text):
         mls_number = match.group(1)
         name = match.group(2).strip()
-        location = match.group(3).strip()
-        currency = match.group(4)
-        price = match.group(5).replace(",", "")
-        link = match.group(6).strip()
+        sqft = match.group(3).replace(",", "")
+        beds = match.group(4)
+        baths = match.group(5)
+        location = match.group(6).strip()
+        currency = match.group(7)
+        price = match.group(8).replace(",", "")
+        link = match.group(9).strip()
         
         # Convert CI$ to USD
         currency, price = convert_ci_to_usd(price, currency)
@@ -90,14 +93,19 @@ def parse_little_cayman_listings(md_text, url=None):
             "price": price,
             "link": link,
             "listing_type": listing_type,
-            "image_link": image_link
+            "image_link": image_link,
+            "mls_number": mls_number,
+            "sqft": sqft,
+            "beds": beds,
+            "baths": baths,
+            "location": location
         })
     return results
 
 def parse_cayman_brac_listings(md_text, url=None):
     """
     Extracts Cayman Brac listings from markdown.
-    Returns a list of dicts: {name, price, currency, link, listing_type, image_link}
+    Returns a list of dicts: {name, price, currency, link, listing_type, image_link, mls_number, sqft, beds, baths, location}
     """
     import re
     
@@ -109,7 +117,7 @@ def parse_cayman_brac_listings(md_text, url=None):
     #
     # LOCATION, Cayman Brac PRICE ](LINK "TITLE")
     block_pattern = re.compile(
-        r'\[ MLS#: (\d+)\s+([^\n]*?)\n\s*\*[^\n]*\n\s*\*[^\n]*\n\s*\*[^\n]*\n\n([^,\n]+),\s*Cayman Brac\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
+        r'\[ MLS#: (\d+)\s+([^\n]*?)\n\s*\*\s*([\d,]+)\s+SqFt\n\s*\*\s*(\d+(?:\.\d+)?)\s+Beds?\n\s*\*\s*(\d+(?:\.\d+)?)\s+Baths?\n\n([^,\n]+),\s*Cayman Brac\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
         re.MULTILINE | re.DOTALL
     )
 
@@ -125,10 +133,13 @@ def parse_cayman_brac_listings(md_text, url=None):
     for match in block_pattern.finditer(md_text):
         mls_number = match.group(1)
         name = match.group(2).strip()
-        location = match.group(3).strip()
-        currency = match.group(4)
-        price = match.group(5).replace(",", "")
-        link = match.group(6).strip()
+        sqft = match.group(3).replace(",", "")
+        beds = match.group(4)
+        baths = match.group(5)
+        location = match.group(6).strip()
+        currency = match.group(7)
+        price = match.group(8).replace(",", "")
+        link = match.group(9).strip()
         
         # Convert CI$ to USD
         currency, price = convert_ci_to_usd(price, currency)
@@ -162,14 +173,19 @@ def parse_cayman_brac_listings(md_text, url=None):
             "price": price,
             "link": link,
             "listing_type": listing_type,
-            "image_link": image_link
+            "image_link": image_link,
+            "mls_number": mls_number,
+            "sqft": sqft,
+            "beds": beds,
+            "baths": baths,
+            "location": location
         })
     return results
 
 def parse_markdown_list(md_text, url=None):
     """
-    Extracts name, price, currency, link, listing_type, and image_link from CIREBA markdown.
-    Returns a list of dicts: {name, price, currency, link, listing_type, image_link}
+    Extracts name, price, currency, link, listing_type, image_link, mls_number, sqft, beds, baths, and location from CIREBA markdown.
+    Returns a list of dicts: {name, price, currency, link, listing_type, image_link, mls_number, sqft, beds, baths, location}
     """
     import re
 
@@ -181,7 +197,7 @@ def parse_markdown_list(md_text, url=None):
     #
     # LOCATION, Grand Cayman PRICE ](LINK "TITLE")
     block_pattern = re.compile(
-        r'\[ MLS#: (\d+)\s+([^\n]*?)\n\s*\*[^\n]*\n\s*\*[^\n]*\n\s*\*[^\n]*\n\n([^,\n]+),\s*Grand Cayman\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
+        r'\[ MLS#: (\d+)\s+([^\n]*?)\n\s*\*\s*([\d,]+)\s+SqFt\n\s*\*\s*(\d+(?:\.\d+)?)\s+Beds?\n\s*\*\s*(\d+(?:\.\d+)?)\s+Baths?\n\n([^,\n]+),\s*Grand Cayman\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
         re.MULTILINE | re.DOTALL
     )
 
@@ -197,10 +213,13 @@ def parse_markdown_list(md_text, url=None):
     for match in block_pattern.finditer(md_text):
         mls_number = match.group(1)
         name = match.group(2).strip()
-        location = match.group(3).strip()
-        currency = match.group(4)
-        price = match.group(5).replace(",", "")
-        link = match.group(6).strip()
+        sqft = match.group(3).replace(",", "")
+        beds = match.group(4)
+        baths = match.group(5)
+        location = match.group(6).strip()
+        currency = match.group(7)
+        price = match.group(8).replace(",", "")
+        link = match.group(9).strip()
         
         # Convert CI$ to USD
         currency, price = convert_ci_to_usd(price, currency)
@@ -234,7 +253,12 @@ def parse_markdown_list(md_text, url=None):
             "price": price,
             "link": link,
             "listing_type": listing_type,
-            "image_link": image_link
+            "image_link": image_link,
+            "mls_number": mls_number,
+            "sqft": sqft,
+            "beds": beds,
+            "baths": baths,
+            "location": location
         })
     
     # Parse Little Cayman listings and add to results
@@ -262,14 +286,45 @@ async def main():
             markdown_generator = cleaned_md_generator,
             wait_for_images = True,
             scan_full_page = True,
-            scroll_delay=0.5, 
+            scroll_delay=1, 
         )
 
         urls = [
+            # condos - pages 1-24
             "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N",
             "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#2",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#3",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#4",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#5",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#6",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#7",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#8",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#9",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#10",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#11",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#12",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#13",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#14",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#15",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#16",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#17",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#18",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#19",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#20",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#21",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#22",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#23",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#24",
+            
+            #single family homes
             "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N",
             "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N#2",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N#3",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N#4",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N#5",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N#6",
+
+            # duplexes
             "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_5/filterby_N",
             "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_5/filterby_N#2"
         ]

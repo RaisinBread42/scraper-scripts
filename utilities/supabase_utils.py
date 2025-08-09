@@ -71,18 +71,67 @@ def save_to_supabase(target_url: str, results: List[Dict]) -> bool:
             os.environ.get("SUPABASE_ANON_KEY")
         )
         
-        # Insert into scraping_results table
-        response = supabase.table('scraping_results').insert({
-            "target_url": target_url,
-            "results": results  # This will be stored as JSONB
-        }).execute()
+        # Prepare data for insertion - each result becomes a separate row
+        rows_to_insert = []
+        for result in results:
+            # Convert string values to appropriate types
+            sqft = None
+            if result.get('sqft'):
+                try:
+                    sqft = int(result['sqft'].replace(',', '')) if isinstance(result['sqft'], str) else int(result['sqft'])
+                except (ValueError, TypeError):
+                    sqft = None
+            
+            beds = None
+            if result.get('beds'):
+                try:
+                    beds = int(float(result['beds'])) if isinstance(result['beds'], str) else int(result['beds'])
+                except (ValueError, TypeError):
+                    beds = None
+            
+            baths = None
+            if result.get('baths'):
+                try:
+                    baths = int(float(result['baths'])) if isinstance(result['baths'], str) else int(result['baths'])
+                except (ValueError, TypeError):
+                    baths = None
+            
+            price = None
+            if result.get('price'):
+                try:
+                    price = float(result['price'].replace(',', '')) if isinstance(result['price'], str) else float(result['price'])
+                except (ValueError, TypeError):
+                    price = None
+            
+            row = {
+                "target_url": target_url,
+                "mls_number": result.get('mls_number'),
+                "name": result.get('name'),
+                "sqft": sqft,
+                "beds": beds,
+                "baths": baths,
+                "location": result.get('location'),
+                "currency": result.get('currency'),
+                "price": price,
+                "link": result.get('link'),
+                "image_link": result.get('image_link'),
+                "type": normalize_listing_type(result.get('listing_type'))
+            }
+            rows_to_insert.append(row)
         
-        if response.data:
-            print(f"✅ Saved {len(results)} results for {target_url}")
-            return True
+        # Insert all rows at once
+        if rows_to_insert:
+            response = supabase.table('scraping_results').insert(rows_to_insert).execute()
+            
+            if response.data:
+                print(f"✅ Saved {len(response.data)} listings for {target_url}")
+                return True
+            else:
+                print(f"❌ Failed to save results for {target_url}")
+                return False
         else:
-            print(f"❌ Failed to save results for {target_url}")
-            return False
+            print(f"⚠️ No valid results to save for {target_url}")
+            return True
             
     except Exception as e:
         print(f"Error saving to Supabase: {e}")
