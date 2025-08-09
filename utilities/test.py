@@ -14,7 +14,7 @@ async def main():
 
         config = CrawlerRunConfig(
             # e.g., first 30 items from Hacker News
-            css_selector="div#search-ajax-contents",
+            css_selector="div#grid-view",
             markdown_generator = cleaned_md_generator,
             wait_for_images = True,
             scan_full_page = True,
@@ -24,7 +24,7 @@ async def main():
         # URLs collected from all Python scripts in the root directory
         urls = [
             # From azurerealty.py
-            "https://century21cayman.com/en/s/for-sale/condos-apartments/new-listing/hga-usd/2",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_5/filterby_N",
 
         ]
 

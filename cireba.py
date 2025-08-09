@@ -11,41 +11,81 @@ from utilities.supabase_utils import save_to_supabase, deduplicate_listings, nor
 # Load environment variables from .env file
 load_dotenv()  # Add this line
 
-def parse_markdown_list(md_text):
+def convert_ci_to_usd(price_str, currency):
+    """Convert CI$ to USD using exact rate: 1 CI$ = 1.2195121951219512195121951219512 USD"""
+    if currency == "CI$" and price_str:
+        try:
+            ci_amount = float(price_str.replace(",", ""))
+            usd_amount = ci_amount * 1.2195121951219512195121951219512
+            return "US$", str(round(usd_amount, 2))
+        except ValueError:
+            return currency, price_str
+    return currency, price_str
+
+def parse_markdown_list(md_text, url=None):
     """
-    Extracts name, price, currency, and link from CIREBA markdown.
-    Returns a list of dicts: {name, price, currency, link}
+    Extracts name, price, currency, link, listing_type, and image_link from CIREBA markdown.
+    Returns a list of dicts: {name, price, currency, link, listing_type, image_link}
     """
     import re
 
-    # Pattern for the property block
+    # Pattern for the property block - new format:
+    # [ MLS#: NUMBER TITLE * SQFT * BEDS * BATHS LOCATION PRICE ](LINK "TITLE")
     block_pattern = re.compile(
-        r'\[ MLS#: \d+\s+([^\n]+).*?\n\n([^\[\n]+)\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)',
+        r'\[ MLS#: (\d+)\s+([^\n]*?)\s*\*[^*]*\*[^*]*\*[^*]*\n*([^,\n]*),\s*Grand Cayman\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
         re.DOTALL
     )
 
+    # Pattern to find image links before each property block
+    image_pattern = re.compile(
+        r'\[ !\[([^\]]*)\]\(([^)]*)\) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)'
+    )
+
+    # Find all image links
+    image_matches = list(image_pattern.finditer(md_text))
+    
     results = []
     for match in block_pattern.finditer(md_text):
-        name = match.group(1).strip()
-        # location = match.group(2).strip()  # Not used, but available
-        currency = match.group(3)
-        price = match.group(4).replace(",", "")
-        link = match.group(5).strip()
+        mls_number = match.group(1)
+        name = match.group(2).strip()
+        location = match.group(3).strip()
+        currency = match.group(4)
+        price = match.group(5).replace(",", "")
+        link = match.group(6).strip()
         
-        # Extract property type from CIREBA URL structure
-        # URL format: /property-detail/{location}/{property-type}-for-sale-in-cayman-islands/{property-name}
-        url_match = re.search(r'/property-detail/[^/]+/([^-]+)-properties?-for-sale-in-cayman-islands/', link)
-        if url_match:
-            url_type = url_match.group(1)
-            listing_type = normalize_listing_type(url_type)
+        # Convert CI$ to USD
+        currency, price = convert_ci_to_usd(price, currency)
+        
+        # Find the first image for this property (look for matching link)
+        image_link = ""
+        for img_match in image_matches:
+            if img_match.group(3) == link:
+                image_link = img_match.group(2)
+                break
+        
+        # Determine listing type based on URL
+        if url and "listingtype_14" in url:
+            listing_type = "Condo"
+        elif url and "listingtype_4" in url:
+            listing_type = "Home"
+        elif url and "listingtype_5" in url:
+            listing_type = "Duplex"
         else:
-            listing_type = normalize_listing_type(name)  # Fallback to name
+            # Fallback - try to determine from URL structure
+            if "/residential-condo/" in link or "condo" in name.lower():
+                listing_type = "Condo"
+            elif "duplex" in name.lower():
+                listing_type = "Duplex"
+            else:
+                listing_type = "Home"
+        
         results.append({
             "name": name,
             "currency": currency,
             "price": price,
             "link": link,
-            "listing_type": listing_type
+            "listing_type": listing_type,
+            "image_link": image_link
         })
     return results
 
@@ -68,9 +108,12 @@ async def main():
         )
 
         urls = [
-            "https://www.cireba.com/cayman-islands-real-estate-listings/filterby_N",
-            "https://www.cireba.com/cayman-islands-real-estate-listings/filterby_N#2",
-            "https://www.cireba.com/cayman-islands-real-estate-listings/filterby_N#3"
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#2",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N#2"
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_5/filterby_N",
+            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_5/filterby_N#2"
         ]
 
         results = await crawler.arun_many(urls=urls, config=config)
@@ -82,7 +125,7 @@ async def main():
                 print(f"Processing page {i+1}: {urls[i]}")
                 
                 # Parse the markdown content
-                parsed_listings = parse_markdown_list(result.markdown)
+                parsed_listings = parse_markdown_list(result.markdown, urls[i])
                 all_listings.extend(parsed_listings)
                 
                 # Save each page's results to Supabase
