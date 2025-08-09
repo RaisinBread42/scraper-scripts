@@ -103,6 +103,13 @@ def save_to_supabase(target_url: str, results: List[Dict]) -> bool:
                 except (ValueError, TypeError):
                     price = None
             
+            acres = None
+            if result.get('acres'):
+                try:
+                    acres = float(result['acres']) if isinstance(result['acres'], str) else float(result['acres'])
+                except (ValueError, TypeError):
+                    acres = None
+            
             row = {
                 "target_url": target_url,
                 "mls_number": result.get('mls_number'),
@@ -117,6 +124,10 @@ def save_to_supabase(target_url: str, results: List[Dict]) -> bool:
                 "image_link": result.get('image_link'),
                 "type": normalize_listing_type(result.get('listing_type'))
             }
+            
+            # Add acres field if it exists (for land listings)
+            if acres is not None:
+                row["acres"] = acres
             rows_to_insert.append(row)
         
         # Insert all rows at once

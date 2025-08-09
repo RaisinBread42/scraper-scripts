@@ -182,6 +182,75 @@ def parse_cayman_brac_listings(md_text, url=None):
         })
     return results
 
+def parse_land_listings(md_text, url=None):
+    """
+    Extracts land listings from markdown.
+    Returns a list of dicts: {name, price, currency, link, listing_type, image_link, mls_number, acres, location}
+    """
+    import re
+    
+    # Pattern for land listings - handles all three islands (Grand Cayman, Little Cayman, Cayman Brac):
+    # [ MLS#: NUMBER TITLE
+    #   * X.XX Acres
+    #
+    # LOCATION, ISLAND PRICE ](LINK "TITLE")
+    block_pattern = re.compile(
+        r'\[ MLS#: (\d+)\s+([^\n]*?)\n\s*\*\s*([\d.]+)\s+Acres\n\n([^,\n]+),\s*(Grand Cayman|Little Cayman|Cayman Brac)\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
+        re.MULTILINE | re.DOTALL
+    )
+
+    # Pattern to find image links before each property block
+    image_pattern = re.compile(
+        r'\[ !\[([^\]]*)\]\(([^)]*)\) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)'
+    )
+
+    # Find all image links
+    image_matches = list(image_pattern.finditer(md_text))
+    
+    results = []
+    for match in block_pattern.finditer(md_text):
+        mls_number = match.group(1)
+        name = match.group(2).strip()
+        acres = match.group(3)
+        location = match.group(4).strip()
+        island = match.group(5).strip()
+        currency = match.group(6)
+        price = match.group(7).replace(",", "")
+        link = match.group(8).strip()
+        
+        # Convert CI$ to USD
+        currency, price = convert_ci_to_usd(price, currency)
+        
+        # Find the first image for this property (look for matching link)
+        image_link = ""
+        for img_match in image_matches:
+            if img_match.group(3) == link:
+                image_link = img_match.group(2)
+                break
+        
+        # Land listings are always type "Land"
+        listing_type = "Land"
+        
+        # Combine location with island for full location
+        full_location = f"{location}, {island}"
+        
+        results.append({
+            "name": name,
+            "currency": currency,
+            "price": price,
+            "link": link,
+            "listing_type": listing_type,
+            "image_link": image_link,
+            "mls_number": mls_number,
+            "acres": acres,
+            "location": full_location,
+            "sqft": None,
+            "beds": None,
+            "baths": None
+        })
+    
+    return results
+
 def parse_markdown_list(md_text, url=None):
     """
     Extracts name, price, currency, link, listing_type, image_link, mls_number, sqft, beds, baths, and location from CIREBA markdown.
@@ -269,6 +338,11 @@ def parse_markdown_list(md_text, url=None):
     cayman_brac_results = parse_cayman_brac_listings(md_text, url)
     results.extend(cayman_brac_results)
     
+    # Parse land listings if this is a land URL
+    if url and "cayman-land-for-sale" in url:
+        land_results = parse_land_listings(md_text, url)
+        results.extend(land_results)
+    
     return results
 
 async def main():
@@ -327,6 +401,24 @@ async def main():
             # duplexes
             "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_5/filterby_N",
             "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_5/filterby_N#2"
+
+            # land - pages 1-16
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#2",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#3",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#4",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#5",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#6",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#7",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#8",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#9",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#10",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#11",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#12",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#13",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#14",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#15",
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#16"
         ]
 
         results = await crawler.arun_many(urls=urls, config=config)

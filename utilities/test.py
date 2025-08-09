@@ -23,12 +23,7 @@ async def main():
 
         # URLs collected from all Python scripts in the root directory
         urls = [
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#2",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N#2"
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_5/filterby_N",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_5/filterby_N#2"
+            "https://www.cireba.com/cayman-land-for-sale/filterby_N#16",
 
         ]
 
