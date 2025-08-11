@@ -98,7 +98,7 @@ def parse_little_cayman_listings(md_text, url=None):
             "sqft": sqft,
             "beds": beds,
             "baths": baths,
-            "location": location
+            "location": f"{location}, Little Cayman"
         })
     return results
 
@@ -178,7 +178,7 @@ def parse_cayman_brac_listings(md_text, url=None):
             "sqft": sqft,
             "beds": beds,
             "baths": baths,
-            "location": location
+            "location": f"{location}, Cayman Brac"
         })
     return results
 
@@ -316,6 +316,9 @@ def parse_markdown_list(md_text, url=None):
             else:
                 listing_type = "Home"
         
+        # Combine location with island for full location (similar to land listings)
+        full_location = f"{location}, Grand Cayman"
+        
         results.append({
             "name": name,
             "currency": currency,
@@ -327,7 +330,7 @@ def parse_markdown_list(md_text, url=None):
             "sqft": sqft,
             "beds": beds,
             "baths": baths,
-            "location": location
+            "location": full_location
         })
     
     # Parse Little Cayman listings and add to results
