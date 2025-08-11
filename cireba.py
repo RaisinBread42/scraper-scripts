@@ -6,10 +6,97 @@ import os
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
-from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type
+from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type, get_existing_mls_numbers, filter_new_listings, save_new_mls_numbers
+from datetime import datetime
+import json
 
 # Load environment variables from .env file
 load_dotenv()  # Add this line
+
+# Create log file with today's date
+LOG_FILE = f"cireba-{datetime.now().strftime('%Y-%m-%d')}.txt"
+
+# Create directory for raw crawl results
+RAW_RESULTS_DIR = f"raw_crawl_results_{datetime.now().strftime('%Y-%m-%d')}"
+
+def log_message(message):
+    """Write message to log file, overwriting if first message of the day."""
+    with open(LOG_FILE, 'w' if not hasattr(log_message, 'initialized') else 'a', encoding='utf-8') as f:
+        f.write(f"{datetime.now().strftime('%H:%M:%S')} - {message}\n")
+    if not hasattr(log_message, 'initialized'):
+        log_message.initialized = True
+
+def get_category_name(url):
+    """Extract category name from URL for file naming."""
+    if "listingtype_14" in url:
+        return "condos"
+    elif "listingtype_4" in url:
+        return "homes"
+    elif "listingtype_5" in url:
+        return "duplexes"
+    elif "cayman-land-for-sale" in url:
+        return "land"
+    else:
+        return "unknown"
+
+def save_crawl_result(result, url, page_number):
+    """Save raw crawl result to file for later parsing."""
+    # Create results directory if it doesn't exist
+    if not os.path.exists(RAW_RESULTS_DIR):
+        os.makedirs(RAW_RESULTS_DIR)
+    
+    category = get_category_name(url)
+    filename = f"{category}-page-{page_number}.json"
+    filepath = os.path.join(RAW_RESULTS_DIR, filename)
+    
+    # Prepare data to save
+    save_data = {
+        "url": url,
+        "page_number": page_number,
+        "timestamp": datetime.now().isoformat(),
+        "success": result.success,
+        "markdown": result.markdown if result.success else None,
+        "status_code": getattr(result, 'status_code', None),
+        "error": str(result.error) if hasattr(result, 'error') and result.error else None
+    }
+    
+    # Save to JSON file
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(save_data, f, ensure_ascii=False, indent=2)
+    
+    log_message(f"💾 Saved raw result to {filename}")
+    return filepath
+
+def load_crawl_result(filepath):
+    """Load raw crawl result from file."""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        log_message(f"📖 Loaded raw result from {os.path.basename(filepath)}")
+        return data
+    except Exception as e:
+        log_message(f"❌ Error loading {filepath}: {e}")
+        return None
+
+def get_saved_crawl_files(category):
+    """Get all saved crawl files for a specific category, sorted by page number."""
+    if not os.path.exists(RAW_RESULTS_DIR):
+        return []
+    
+    files = []
+    for filename in os.listdir(RAW_RESULTS_DIR):
+        if filename.startswith(f"{category}-page-") and filename.endswith('.json'):
+            filepath = os.path.join(RAW_RESULTS_DIR, filename)
+            # Extract page number from filename
+            try:
+                page_num = int(filename.split('-page-')[1].split('.json')[0])
+                files.append((page_num, filepath))
+            except ValueError:
+                continue
+    
+    # Sort by page number
+    files.sort(key=lambda x: x[0])
+    return [filepath for _, filepath in files]
 
 def convert_ci_to_usd(price_str, currency):
     """Convert CI$ to USD using exact rate: 1 CI$ = 1.2195121951219512195121951219512 USD"""
@@ -348,102 +435,177 @@ def parse_markdown_list(md_text, url=None):
     
     return results
 
+async def crawl_category_pages(crawler, base_url, config):
+    """
+    Crawl all pages of a property category and save raw results to files.
+    Stops when a page fails to crawl or returns no content.
+    Returns the number of pages successfully crawled.
+    """
+    page_number = 1
+    pages_crawled = 0
+    
+    while True:
+        # First page uses base URL, subsequent pages append #index
+        if page_number == 1:
+            current_url = base_url
+        else:
+            current_url = f"{base_url}#{page_number}"
+        
+        log_message(f"🌐 Crawling page {page_number}: {current_url}")
+        
+        # Crawl the current page
+        result = await crawler.arun(url=current_url, config=config)
+        
+        # Save raw result to file regardless of success
+        save_crawl_result(result, current_url, page_number)
+        
+        if not result.success:
+            log_message(f"❌ Failed to crawl page {page_number}: {current_url}")
+            break
+        
+        # Check if page has content (simple check for markdown length)
+        if not result.markdown or len(result.markdown.strip()) < 100:
+            log_message(f"📭 Page {page_number} appears empty. Stopping crawl.")
+            break
+        
+        pages_crawled += 1
+        log_message(f"✅ Successfully crawled page {page_number}")
+        
+        # Move to next page
+        page_number += 1
+    
+    log_message(f"🏁 Crawling complete. {pages_crawled} pages crawled for category.")
+    return pages_crawled
+
+def process_saved_category_results(base_url):
+    """
+    Process saved crawl results for a category, parse listings, and return results.
+    Returns all listings found across all saved pages for this category.
+    """
+    category = get_category_name(base_url)
+    saved_files = get_saved_crawl_files(category)
+    
+    if not saved_files:
+        log_message(f"⚠️ No saved files found for category: {category}")
+        return []
+    
+    all_category_listings = []
+    
+    for filepath in saved_files:
+        # Load the saved crawl result
+        crawl_data = load_crawl_result(filepath)
+        
+        if not crawl_data or not crawl_data.get('success'):
+            log_message(f"⚠️ Skipping failed/invalid result: {os.path.basename(filepath)}")
+            continue
+        
+        # Parse the markdown content
+        parsed_listings = parse_markdown_list(crawl_data['markdown'], crawl_data['url'])
+        
+        if not parsed_listings:
+            log_message(f"📭 No listings found in {os.path.basename(filepath)}")
+            continue
+        
+        log_message(f"✅ Parsed {len(parsed_listings)} listings from {os.path.basename(filepath)}")
+        all_category_listings.extend(parsed_listings)
+    
+    log_message(f"🎯 Total {len(all_category_listings)} listings processed for {category}")
+    return all_category_listings
+
 async def main():
-    # Create an instance of AsyncWebCrawler
-    async with AsyncWebCrawler() as crawler:
-        # Run the crawler on a URL
+    log_message("🚀 Starting CIREBA scraper with file-based crawling...")
+    
+    # Base URLs for each property category
+    base_urls = [
+        "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N",  # Condos
+        "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N",   # Homes  
+        "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_5/filterby_N",   # Duplexes
+        "https://www.cireba.com/cayman-land-for-sale/filterby_N"                                   # Land
+    ]
+    
+    # ===== PHASE 1: CRAWL AND SAVE RAW RESULTS =====
+    # Check if we already have saved results for today
+    skip_crawling = os.path.exists(RAW_RESULTS_DIR) and os.listdir(RAW_RESULTS_DIR)
+    
+    if skip_crawling:
+        log_message(f"📁 Found existing crawl data in {RAW_RESULTS_DIR}")
+        log_message("⏭️ Skipping crawling phase - using existing files")
+        log_message("💡 Delete the folder to force re-crawling")
+    else:
+        log_message("📡 PHASE 1: Crawling pages and saving raw results...")
+        
+        # Create an instance of AsyncWebCrawler
+        async with AsyncWebCrawler() as crawler:
+            # Configure crawler settings
+            cleaned_md_generator = DefaultMarkdownGenerator(
+                content_source="cleaned_html",  # This is the default
+            )
 
-        cleaned_md_generator = DefaultMarkdownGenerator(
-            content_source="cleaned_html",  # This is the default
-        )
+            config = CrawlerRunConfig(
+                css_selector="div#grid-view",
+                markdown_generator = cleaned_md_generator,
+                wait_for_images = True,
+                scan_full_page = True,
+                scroll_delay=1, 
+            )
 
-        config = CrawlerRunConfig(
-            # e.g., first 30 items from Hacker News
-            css_selector="div#grid-view",
-            markdown_generator = cleaned_md_generator,
-            wait_for_images = True,
-            scan_full_page = True,
-            scroll_delay=1, 
-        )
-
-        urls = [
-            # condos - pages 1-24
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#2",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#3",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#4",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#5",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#6",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#7",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#8",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#9",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#10",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#11",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#12",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#13",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#14",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#15",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#16",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#17",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#18",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#19",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#20",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#21",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#22",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#23",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#24",
+            # Crawl each category and save raw results
+            total_pages_crawled = 0
+            for base_url in base_urls:
+                category = get_category_name(base_url)
+                log_message(f"\n🏗️ Crawling {category.upper()} category: {base_url}")
+                
+                pages_crawled = await crawl_category_pages(crawler, base_url, config)
+                total_pages_crawled += pages_crawled
+                
+                log_message(f"✅ {category.upper()} crawling complete: {pages_crawled} pages saved")
             
-            #single family homes
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N#2",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N#3",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N#4",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N#5",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_4/filterby_N#6",
-
-            # duplexes
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_5/filterby_N",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_5/filterby_N#2"
-
-            # land - pages 1-16
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#2",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#3",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#4",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#5",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#6",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#7",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#8",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#9",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#10",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#11",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#12",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#13",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#14",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#15",
-            "https://www.cireba.com/cayman-land-for-sale/filterby_N#16"
-        ]
-
-        results = await crawler.arun_many(urls=urls, config=config)
+            log_message(f"🎯 PHASE 1 COMPLETE: {total_pages_crawled} total pages crawled and saved")
+    
+    # ===== PHASE 2: PROCESS SAVED RESULTS =====
+    log_message("\n🔧 PHASE 2: Processing saved results and saving to database...")
+    
+    # Get existing MLS numbers from database
+    log_message("🔍 Checking for existing MLS numbers...")
+    existing_mls_numbers = get_existing_mls_numbers()
+    
+    # Process each category's saved results
+    all_listings = []
+    all_new_mls_numbers = []
+    
+    for base_url in base_urls:
+        category = get_category_name(base_url)
+        log_message(f"\n📋 Processing saved {category.upper()} results...")
         
-        # Process each crawled page
-        all_listings = []
-        for i, result in enumerate(results):
-            if result.success:
-                print(f"Processing page {i+1}: {urls[i]}")
-                
-                # Parse the markdown content
-                parsed_listings = parse_markdown_list(result.markdown, urls[i])
-                all_listings.extend(parsed_listings)
-                
-                # Save each page's results to Supabase
-                save_to_supabase(urls[i], deduplicate_listings(parsed_listings))
-                
-                print(f"Found {len(parsed_listings)} listings on page {i+1}")
-            else:
-                print(f"Failed to crawl page {i+1}: {urls[i]}")
+        # Parse listings from saved files
+        category_listings = process_saved_category_results(base_url)
         
-        print(f"\nTotal listings found: {len(all_listings)}")
+        if not category_listings:
+            log_message(f"⚠️ No listings found for {category.upper()}")
+            continue
+        
+        # Filter out already scraped listings
+        new_listings = filter_new_listings(category_listings, existing_mls_numbers)
+        
+        if new_listings:
+            all_listings.extend(new_listings)
+            # Collect new MLS numbers for tracking
+            new_mls_numbers = [listing['mls_number'] for listing in new_listings if listing.get('mls_number')]
+            all_new_mls_numbers.extend(new_mls_numbers)
+            
+            # Save new listings to Supabase
+            save_to_supabase(base_url, deduplicate_listings(new_listings))
+            log_message(f"✅ {category.upper()} processing complete: {len(new_listings)} new listings saved")
+        else:
+            log_message(f"ℹ️ {category.upper()}: No new listings to save (all already exist)")
+    
+    # Save new MLS numbers to tracking table
+    if all_new_mls_numbers:
+        save_new_mls_numbers(all_new_mls_numbers)
+    
+    log_message(f"\n🏆 SCRAPING COMPLETE! Total new listings processed: {len(all_listings)}")
+    log_message(f"📁 Raw crawl data saved in: {RAW_RESULTS_DIR}")
+    log_message("💡 You can now re-run parsing by running this script again (it will skip crawling if files exist)")
 
 # Run the async main function
 asyncio.run(main())
