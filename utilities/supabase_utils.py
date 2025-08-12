@@ -236,3 +236,56 @@ def save_new_mls_numbers(mls_numbers: List[str]) -> bool:
         else:
             log_supabase_message(f"Error saving MLS numbers: {e}")
             return False
+
+def mark_removed_listings(current_parsed_mls_numbers: set, existing_mls_numbers: set) -> bool:
+    """
+    Mark MLS listings as removed if they exist in database but not in current parsed results.
+    Updates the removed_on field in scraping_results table to current UTC timestamp.
+    """
+    try:
+        # Find MLS numbers that exist in database but not in current parsed results
+        removed_mls_numbers = existing_mls_numbers - current_parsed_mls_numbers
+        
+        if not removed_mls_numbers:
+            log_supabase_message("✅ No listings need to be marked as removed")
+            return True
+        
+        # Initialize Supabase client - try service role first, fallback to anon key
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        anon_key = os.environ.get("SUPABASE_ANON_KEY")
+        
+        # Use service role key if available (bypasses RLS), otherwise use anon key
+        key_to_use = service_key if service_key else anon_key
+        supabase: Client = create_client(os.environ.get("SUPABASE_URL"), key_to_use)
+        
+        # Update removed_on field for MLS numbers that are no longer available
+        current_utc = datetime.utcnow().isoformat()
+        
+        # Update each removed MLS number in scraping_results table
+        successful_updates = 0
+        for mls_number in removed_mls_numbers:
+            try:
+                response = supabase.table('scraping_results')\
+                    .update({'removed_on': current_utc})\
+                    .eq('mls_number', mls_number)\
+                    .execute()
+                
+                if response.data:
+                    successful_updates += 1
+                    log_supabase_message(f"🗑️ Marked MLS #{mls_number} as removed on {current_utc}")
+                
+            except Exception as update_error:
+                log_supabase_message(f"❌ Failed to mark MLS #{mls_number} as removed: {update_error}")
+        
+        log_supabase_message(f"✅ Successfully marked {successful_updates}/{len(removed_mls_numbers)} listings as removed")
+        return successful_updates > 0 or len(removed_mls_numbers) == 0
+        
+    except Exception as e:
+        error_message = str(e)
+        # Check if it's an RLS policy violation
+        if "row-level security policy" in error_message.lower():
+            log_supabase_message(f"⚠️ RLS policy blocks marking removed listings. Consider using SUPABASE_SERVICE_ROLE_KEY or updating RLS policy.")
+            return True  # Continue execution even if marking removed fails
+        else:
+            log_supabase_message(f"Error marking removed listings: {e}")
+            return False
