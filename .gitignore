@@ -10,3 +10,4 @@ migrate-mls-*.txt
 
 # Raw crawl results directories (date-based)
 raw_crawl_results_*
+.claude/settings.local.json

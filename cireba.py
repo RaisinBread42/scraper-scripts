@@ -109,331 +109,6 @@ def convert_ci_to_usd(price_str, currency):
             return currency, price_str
     return currency, price_str
 
-def parse_little_cayman_listings(md_text, url=None):
-    """
-    Extracts Little Cayman listings from markdown.
-    Returns a list of dicts: {name, price, currency, link, listing_type, image_link, mls_number, sqft, beds, baths, location}
-    """
-    import re
-    
-    # Pattern for Little Cayman listings:
-    # [ MLS#: NUMBER TITLE
-    #   * SQFT SqFt
-    #   * BEDS Beds
-    #   * BATHS Baths
-    #
-    # LOCATION, Little Cayman PRICE ](LINK "TITLE")
-    block_pattern = re.compile(
-        r'\[ MLS#: (\d+)\s+([^\n]*?)\n\s*\*\s*([\d,]+)\s+SqFt\n\s*\*\s*(\d+(?:\.\d+)?)\s+Beds?\n\s*\*\s*(\d+(?:\.\d+)?)\s+Baths?\n\n([^,\n]+),\s*Little Cayman\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
-        re.MULTILINE | re.DOTALL
-    )
-
-    # Pattern to find image links before each property block
-    image_pattern = re.compile(
-        r'\[ !\[([^\]]*)\]\(([^)]*)\) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)'
-    )
-
-    # Find all image links
-    image_matches = list(image_pattern.finditer(md_text))
-    
-    results = []
-    for match in block_pattern.finditer(md_text):
-        mls_number = match.group(1)
-        name = match.group(2).strip()
-        sqft = match.group(3).replace(",", "")
-        beds = match.group(4)
-        baths = match.group(5)
-        location = match.group(6).strip()
-        currency = match.group(7)
-        price = match.group(8).replace(",", "")
-        link = match.group(9).strip()
-        
-        # Convert CI$ to USD
-        currency, price = convert_ci_to_usd(price, currency)
-        
-        # Find the first image for this property (look for matching link)
-        image_link = ""
-        for img_match in image_matches:
-            if img_match.group(3) == link:
-                image_link = img_match.group(2)
-                break
-        
-        # Determine listing type based on URL - using same logic as main function
-        if url and "listingtype_14" in url:
-            listing_type = "Condo"
-        elif url and "listingtype_4" in url:
-            listing_type = "Home"
-        elif url and "listingtype_5" in url:
-            listing_type = "Duplex"
-        else:
-            # Fallback - try to determine from URL structure
-            if "/residential-condo/" in link or "condo" in name.lower():
-                listing_type = "Condo"
-            elif "duplex" in name.lower():
-                listing_type = "Duplex"
-            else:
-                listing_type = "Home"
-        
-        results.append({
-            "name": name,
-            "currency": currency,
-            "price": price,
-            "link": link,
-            "listing_type": listing_type,
-            "image_link": image_link,
-            "mls_number": mls_number,
-            "sqft": sqft,
-            "beds": beds,
-            "baths": baths,
-            "location": f"{location}, Little Cayman"
-        })
-    return results
-
-def parse_cayman_brac_listings(md_text, url=None):
-    """
-    Extracts Cayman Brac listings from markdown.
-    Returns a list of dicts: {name, price, currency, link, listing_type, image_link, mls_number, sqft, beds, baths, location}
-    """
-    import re
-    
-    # Pattern for Cayman Brac listings:
-    # [ MLS#: NUMBER TITLE
-    #   * SQFT SqFt
-    #   * BEDS Beds
-    #   * BATHS Baths
-    #
-    # LOCATION, Cayman Brac PRICE ](LINK "TITLE")
-    block_pattern = re.compile(
-        r'\[ MLS#: (\d+)\s+([^\n]*?)\n\s*\*\s*([\d,]+)\s+SqFt\n\s*\*\s*(\d+(?:\.\d+)?)\s+Beds?\n\s*\*\s*(\d+(?:\.\d+)?)\s+Baths?\n\n([^,\n]+),\s*Cayman Brac\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
-        re.MULTILINE | re.DOTALL
-    )
-
-    # Pattern to find image links before each property block
-    image_pattern = re.compile(
-        r'\[ !\[([^\]]*)\]\(([^)]*)\) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)'
-    )
-
-    # Find all image links
-    image_matches = list(image_pattern.finditer(md_text))
-    
-    results = []
-    for match in block_pattern.finditer(md_text):
-        mls_number = match.group(1)
-        name = match.group(2).strip()
-        sqft = match.group(3).replace(",", "")
-        beds = match.group(4)
-        baths = match.group(5)
-        location = match.group(6).strip()
-        currency = match.group(7)
-        price = match.group(8).replace(",", "")
-        link = match.group(9).strip()
-        
-        # Convert CI$ to USD
-        currency, price = convert_ci_to_usd(price, currency)
-        
-        # Find the first image for this property (look for matching link)
-        image_link = ""
-        for img_match in image_matches:
-            if img_match.group(3) == link:
-                image_link = img_match.group(2)
-                break
-        
-        # Determine listing type based on URL - using same logic as main function
-        if url and "listingtype_14" in url:
-            listing_type = "Condo"
-        elif url and "listingtype_4" in url:
-            listing_type = "Home"
-        elif url and "listingtype_5" in url:
-            listing_type = "Duplex"
-        else:
-            # Fallback - try to determine from URL structure
-            if "/residential-condo/" in link or "condo" in name.lower():
-                listing_type = "Condo"
-            elif "duplex" in name.lower():
-                listing_type = "Duplex"
-            else:
-                listing_type = "Home"
-        
-        results.append({
-            "name": name,
-            "currency": currency,
-            "price": price,
-            "link": link,
-            "listing_type": listing_type,
-            "image_link": image_link,
-            "mls_number": mls_number,
-            "sqft": sqft,
-            "beds": beds,
-            "baths": baths,
-            "location": f"{location}, Cayman Brac"
-        })
-    return results
-
-def parse_land_listings(md_text, url=None):
-    """
-    Extracts land listings from markdown.
-    Returns a list of dicts: {name, price, currency, link, listing_type, image_link, mls_number, acres, location}
-    """
-    import re
-    
-    # Pattern for land listings - handles all three islands (Grand Cayman, Little Cayman, Cayman Brac):
-    # [ MLS#: NUMBER TITLE
-    #   * X.XX Acres
-    #
-    # LOCATION, ISLAND PRICE ](LINK "TITLE")
-    block_pattern = re.compile(
-        r'\[ MLS#: (\d+)\s+([^\n]*?)\n\s*\*\s*([\d.]+)\s+Acres\n\n([^,\n]+),\s*(Grand Cayman|Little Cayman|Cayman Brac)\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
-        re.MULTILINE | re.DOTALL
-    )
-
-    # Pattern to find image links before each property block
-    image_pattern = re.compile(
-        r'\[ !\[([^\]]*)\]\(([^)]*)\) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)'
-    )
-
-    # Find all image links
-    image_matches = list(image_pattern.finditer(md_text))
-    
-    results = []
-    for match in block_pattern.finditer(md_text):
-        mls_number = match.group(1)
-        name = match.group(2).strip()
-        acres = match.group(3)
-        location = match.group(4).strip()
-        island = match.group(5).strip()
-        currency = match.group(6)
-        price = match.group(7).replace(",", "")
-        link = match.group(8).strip()
-        
-        # Convert CI$ to USD
-        currency, price = convert_ci_to_usd(price, currency)
-        
-        # Find the first image for this property (look for matching link)
-        image_link = ""
-        for img_match in image_matches:
-            if img_match.group(3) == link:
-                image_link = img_match.group(2)
-                break
-        
-        # Land listings are always type "Land"
-        listing_type = "Land"
-        
-        # Combine location with island for full location
-        full_location = f"{location}, {island}"
-        
-        results.append({
-            "name": name,
-            "currency": currency,
-            "price": price,
-            "link": link,
-            "listing_type": listing_type,
-            "image_link": image_link,
-            "mls_number": mls_number,
-            "acres": acres,
-            "location": full_location,
-            "sqft": None,
-            "beds": None,
-            "baths": None
-        })
-    
-    return results
-
-def parse_markdown_list(md_text, url=None):
-    """
-    Extracts name, price, currency, link, listing_type, image_link, mls_number, sqft, beds, baths, and location from CIREBA markdown.
-    Returns a list of dicts: {name, price, currency, link, listing_type, image_link, mls_number, sqft, beds, baths, location}
-    """
-    import re
-
-    # Updated pattern for the property block based on new format:
-    # [ MLS#: NUMBER TITLE
-    #   * SQFT SqFt
-    #   * BEDS Beds
-    #   * BATHS Baths
-    #
-    # LOCATION, Grand Cayman PRICE ](LINK "TITLE")
-    block_pattern = re.compile(
-        r'\[ MLS#: (\d+)\s+([^\n]*?)\n\s*\*\s*([\d,]+)\s+SqFt\n\s*\*\s*(\d+(?:\.\d+)?)\s+Beds?\n\s*\*\s*(\d+(?:\.\d+)?)\s+Baths?\n\n([^,\n]+),\s*Grand Cayman\s+(CI\$|US\$)([\d,\.]+) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',
-        re.MULTILINE | re.DOTALL
-    )
-
-    # Pattern to find image links before each property block
-    image_pattern = re.compile(
-        r'\[ !\[([^\]]*)\]\(([^)]*)\) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)'
-    )
-
-    # Find all image links
-    image_matches = list(image_pattern.finditer(md_text))
-    
-    results = []
-    for match in block_pattern.finditer(md_text):
-        mls_number = match.group(1)
-        name = match.group(2).strip()
-        sqft = match.group(3).replace(",", "")
-        beds = match.group(4)
-        baths = match.group(5)
-        location = match.group(6).strip()
-        currency = match.group(7)
-        price = match.group(8).replace(",", "")
-        link = match.group(9).strip()
-        
-        # Convert CI$ to USD
-        currency, price = convert_ci_to_usd(price, currency)
-        
-        # Find the first image for this property (look for matching link)
-        image_link = ""
-        for img_match in image_matches:
-            if img_match.group(3) == link:
-                image_link = img_match.group(2)
-                break
-        
-        # Determine listing type based on URL - listingtype_14 is Home
-        if url and "listingtype_14" in url:
-            listing_type = "Condo"
-        elif url and "listingtype_4" in url:
-            listing_type = "Home"
-        elif url and "listingtype_5" in url:
-            listing_type = "Duplex"
-        else:
-            # Fallback - try to determine from URL structure
-            if "/residential-condo/" in link or "condo" in name.lower():
-                listing_type = "Condo"
-            elif "duplex" in name.lower():
-                listing_type = "Duplex"
-            else:
-                listing_type = "Home"
-        
-        # Combine location with island for full location (similar to land listings)
-        full_location = f"{location}, Grand Cayman"
-        
-        results.append({
-            "name": name,
-            "currency": currency,
-            "price": price,
-            "link": link,
-            "listing_type": listing_type,
-            "image_link": image_link,
-            "mls_number": mls_number,
-            "sqft": sqft,
-            "beds": beds,
-            "baths": baths,
-            "location": full_location
-        })
-    
-    # Parse Little Cayman listings and add to results
-    little_cayman_results = parse_little_cayman_listings(md_text, url)
-    results.extend(little_cayman_results)
-    
-    # Parse Cayman Brac listings and add to results
-    cayman_brac_results = parse_cayman_brac_listings(md_text, url)
-    results.extend(cayman_brac_results)
-    
-    # Parse land listings if this is a land URL
-    if url and "cayman-land-for-sale" in url:
-        land_results = parse_land_listings(md_text, url)
-        results.extend(land_results)
-    
-    return results
 
 async def crawl_category_pages(crawler, base_url, config):
     """
@@ -500,7 +175,7 @@ def process_saved_category_results(base_url):
             continue
         
         # Parse the markdown content
-        parsed_listings = parse_markdown_list(crawl_data['markdown'], crawl_data['url'])
+        parsed_listings = parse_cireba_listings_unified(crawl_data['markdown'], crawl_data['url'])
         
         if not parsed_listings:
             log_message(f"📭 No listings found in {os.path.basename(filepath)}")
@@ -511,6 +186,125 @@ def process_saved_category_results(base_url):
     
     log_message(f"🎯 Total {len(all_category_listings)} listings processed for {category}")
     return all_category_listings
+
+
+
+def parse_cireba_listings_unified(md_text, url=None):
+    """
+    Unified parser for all CIREBA listings (all islands, properties + land).
+    Replaces: parse_markdown_list, parse_little_cayman_listings, 
+              parse_cayman_brac_listings, parse_land_listings
+    """
+    
+    # Unified pattern for ALL islands and property types
+    # Captures both property (SqFt/Beds/Baths) and land (Acres) formats
+    unified_pattern = re.compile(
+        r'\[ MLS#: (\d+)\s+([^\n]*?)\n'  # MLS number and title
+        r'\s*\*\s*'  # First bullet point
+        r'(?:'  # Non-capturing group for property details
+            r'([\d,]+)\s+SqFt\n\s*\*\s*(\d+(?:\.\d+)?)\s+Beds?\n\s*\*\s*(\d+(?:\.\d+)?)\s+Baths?'  # Property: SqFt, Beds, Baths
+            r'|'  # OR
+            r'([\d.]+)\s+Acres'  # Land: Acres only
+        r')\n\n'
+        r'([^,\n]+),\s*'  # Location
+        r'(Grand Cayman|Little Cayman|Cayman Brac)\s+'  # Island (dynamic)
+        r'(CI\$|US\$)([\d,\.]+)\s*'  # Currency and price
+        r'\]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)',  # Link
+        re.MULTILINE | re.DOTALL
+    )
+
+    # Same image pattern (unchanged)
+    image_pattern = re.compile(
+        r'\[ !\[([^\]]*)\]\(([^)]*)\) \]\((https://www\.cireba\.com/property-detail/[^\s)]+)\s+"[^"]*"\)'
+    )
+
+    # Find all image links
+    image_matches = list(image_pattern.finditer(md_text))
+    
+    results = []
+    for match in unified_pattern.finditer(md_text):
+        mls_number = match.group(1)
+        name = match.group(2).strip()
+        location = match.group(7).strip()
+        island = match.group(8).strip()
+        currency = match.group(9)
+        price = match.group(10).replace(",", "")
+        link = match.group(11).strip()
+        
+        # Determine if it's property or land based on which groups matched
+        is_property = match.group(3) is not None  # SqFt group exists
+        is_land = match.group(6) is not None      # Acres group exists
+        
+        if is_property:
+            # Property listing
+            sqft = match.group(3).replace(",", "")
+            beds = match.group(4)
+            baths = match.group(5)
+            acres = None
+            listing_type = determine_property_type(url, name, link)
+            
+        elif is_land:
+            # Land listing  
+            sqft = None
+            beds = None
+            baths = None
+            acres = match.group(6)
+            listing_type = "Land"
+        else:
+            # Fallback (shouldn't happen with good regex)
+            continue
+        
+        # Convert CI$ to USD (same as before)
+        currency, price = convert_ci_to_usd(price, currency)
+        
+        # Find matching image (same logic as before)
+        image_link = ""
+        for img_match in image_matches:
+            if img_match.group(3) == link:
+                image_link = img_match.group(2)
+                break
+        
+        # Build result with full location
+        full_location = f"{location}, {island}"
+        
+        result = {
+            "name": name,
+            "currency": currency,
+            "price": price,
+            "link": link,
+            "listing_type": listing_type,
+            "image_link": image_link,
+            "mls_number": mls_number,
+            "location": full_location,
+            "sqft": sqft,
+            "beds": beds,
+            "baths": baths
+        }
+        
+        # Add acres for land listings
+        if acres is not None:
+            result["acres"] = acres
+            
+        results.append(result)
+    
+    return results
+
+def determine_property_type(url, name, link):
+    """Extract property type logic into helper function."""
+    if url and "listingtype_14" in url:
+        return "Condo"
+    elif url and "listingtype_4" in url:
+        return "Home"
+    elif url and "listingtype_5" in url:
+        return "Duplex"
+    else:
+        # Fallback logic
+        if "/residential-condo/" in link or "condo" in name.lower():
+            return "Condo"
+        elif "duplex" in name.lower():
+            return "Duplex"
+        else:
+            return "Home"
 
 async def main():
     log_message("🚀 Starting CIREBA scraper with file-based crawling...")
