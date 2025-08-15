@@ -305,3 +305,32 @@ def mark_removed_listings(current_parsed_mls_numbers: set, existing_mls_numbers:
         else:
             log_supabase_message(f"Error marking removed listings: {e}")
             return False
+
+def save_scraping_job_history(source: str) -> bool:
+    """Save scraping job completion to scraping_job_history table."""
+    try:
+        # Initialize Supabase client
+        supabase: Client = create_client(
+            os.environ.get("SUPABASE_URL"), 
+            os.environ.get("SUPABASE_ANON_KEY")
+        )
+        
+        # Prepare data for insertion
+        row_to_insert = {
+            "source": source,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        # Insert into scraping_job_history table
+        response = supabase.table('scraping_job_history').insert(row_to_insert).execute()
+        
+        if response.data:
+            log_supabase_message(f"✅ Saved scraping job history for source: {source}")
+            return True
+        else:
+            log_supabase_message(f"❌ Failed to save scraping job history for source: {source}")
+            return False
+            
+    except Exception as e:
+        log_supabase_message(f"Error saving scraping job history: {e}")
+        return False

@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
-from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type, get_existing_mls_numbers, filter_new_listings, save_new_mls_numbers, mark_removed_listings
+from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type, get_existing_mls_numbers, filter_new_listings, save_new_mls_numbers, mark_removed_listings, save_scraping_job_history
 from datetime import datetime
 import json
 
@@ -308,6 +308,10 @@ def determine_property_type(url, name, link):
 
 async def main():
     log_message("🚀 Starting CIREBA scraper with file-based crawling...")
+    
+    # Save scraping job history at the start
+    log_message("📝 Saving scraping job history...")
+    save_scraping_job_history("automated python script")
     
     # Base URLs for each property category
     base_urls = [
