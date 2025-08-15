@@ -160,7 +160,7 @@ def save_to_supabase(target_url: str, results: List[Dict]) -> bool:
         return False
 
 def get_existing_mls_numbers() -> set:
-    """Fetch all existing MLS numbers from mls_listings table."""
+    """Fetch all existing MLS numbers from mls_listings table using pagination."""
     try:
         # Initialize Supabase client
         supabase: Client = create_client(
@@ -168,18 +168,34 @@ def get_existing_mls_numbers() -> set:
             os.environ.get("SUPABASE_ANON_KEY")
         )
         
-        # Query all MLS numbers from mls_listings table
-        response = supabase.table('mls_listings').select('number').execute()
+        # Collect all MLS numbers using pagination
+        all_mls_numbers = set()
+        page_size = 1000
+        start = 0
         
-        if response.data:
-            # Extract MLS numbers and return as a set for fast lookup
-            mls_numbers = {row['number'] for row in response.data if row['number']}
-            log_supabase_message(f"✅ Found {len(mls_numbers)} existing MLS numbers in database")
-            return mls_numbers
-        else:
-            log_supabase_message("⚠️ No existing MLS numbers found in database")
-            return set()
+        while True:
+            # Query MLS numbers with pagination using range
+            end = start + page_size - 1
+            response = supabase.table('mls_listings').select('number').range(start, end).execute()
             
+            if not response.data:
+                # No more data, break the loop
+                break
+            
+            # Add MLS numbers from current page to the set
+            page_mls_numbers = {row['number'] for row in response.data if row['number']}
+            all_mls_numbers.update(page_mls_numbers)
+            
+            # If we got less than page_size records, we've reached the end
+            if len(response.data) < page_size:
+                break
+            
+            # Move to next page
+            start += page_size
+        
+        log_supabase_message(f"✅ Found {len(all_mls_numbers)} existing MLS numbers in database (paginated)")
+        return all_mls_numbers
+        
     except Exception as e:
         log_supabase_message(f"Error fetching existing MLS numbers: {e}")
         return set()
