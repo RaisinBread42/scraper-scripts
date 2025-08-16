@@ -76,10 +76,10 @@ def deduplicate_listings(listings):
 def save_to_supabase(target_url: str, results: List[Dict]) -> bool:
     """Save scraping results to Supabase table."""
     try:
-        # Initialize Supabase client
+        # Initialize Supabase client with service role key
         supabase: Client = create_client(
             os.environ.get("SUPABASE_URL"), 
-            os.environ.get("SUPABASE_ANON_KEY")
+            os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
         )
         
         # Prepare data for insertion - each result becomes a separate row
@@ -162,10 +162,10 @@ def save_to_supabase(target_url: str, results: List[Dict]) -> bool:
 def get_existing_mls_numbers() -> set:
     """Fetch all existing MLS numbers from mls_listings table using pagination."""
     try:
-        # Initialize Supabase client
+        # Initialize Supabase client with service role key
         supabase: Client = create_client(
             os.environ.get("SUPABASE_URL"), 
-            os.environ.get("SUPABASE_ANON_KEY")
+            os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
         )
         
         # Collect all MLS numbers using pagination
@@ -218,13 +218,11 @@ def filter_new_listings(listings: List[Dict], existing_mls_numbers: set) -> List
 def save_new_mls_numbers(mls_numbers: List[str]) -> bool:
     """Save new MLS numbers to mls_listings table."""
     try:
-        # Initialize Supabase client - try service role first, fallback to anon key
-        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-        anon_key = os.environ.get("SUPABASE_ANON_KEY")
-        
-        # Use service role key if available (bypasses RLS), otherwise use anon key
-        key_to_use = service_key if service_key else anon_key
-        supabase: Client = create_client(os.environ.get("SUPABASE_URL"), key_to_use)
+        # Initialize Supabase client with service role key
+        supabase: Client = create_client(
+            os.environ.get("SUPABASE_URL"), 
+            os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        )
         
         # Prepare data for insertion
         rows_to_insert = [{"number": mls_num} for mls_num in mls_numbers if mls_num]
@@ -266,13 +264,11 @@ def mark_removed_listings(current_parsed_mls_numbers: set, existing_mls_numbers:
             log_supabase_message("✅ No listings need to be marked as removed")
             return True
         
-        # Initialize Supabase client - try service role first, fallback to anon key
-        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-        anon_key = os.environ.get("SUPABASE_ANON_KEY")
-        
-        # Use service role key if available (bypasses RLS), otherwise use anon key
-        key_to_use = service_key if service_key else anon_key
-        supabase: Client = create_client(os.environ.get("SUPABASE_URL"), key_to_use)
+        # Initialize Supabase client with service role key
+        supabase: Client = create_client(
+            os.environ.get("SUPABASE_URL"), 
+            os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        )
         
         # Update removed_on field for MLS numbers that are no longer available
         current_utc = datetime.utcnow().isoformat()
@@ -309,10 +305,10 @@ def mark_removed_listings(current_parsed_mls_numbers: set, existing_mls_numbers:
 def save_scraping_job_history(source: str) -> bool:
     """Save scraping job completion to scraping_job_history table."""
     try:
-        # Initialize Supabase client
+        # Initialize Supabase client with service role key
         supabase: Client = create_client(
             os.environ.get("SUPABASE_URL"), 
-            os.environ.get("SUPABASE_ANON_KEY")
+            os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
         )
         
         # Prepare data for insertion
