@@ -1,0 +1,5 @@
+asyncio
+crawl4ai
+dotenv
+requests
+supabase
