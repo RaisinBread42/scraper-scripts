@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
 from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type, get_existing_mls_numbers, filter_new_listings, save_new_mls_numbers, mark_removed_listings, save_scraping_job_history
+from webhook_logger import WebhookLogger
 from datetime import datetime
 import json
 
@@ -309,9 +310,19 @@ def determine_property_type(url, name, link):
 async def main():
     log_message("🚀 Starting CIREBA scraper with file-based crawling...")
     
-    # Save scraping job history at the start
-    log_message("📝 Saving scraping job history...")
-    save_scraping_job_history("automated python script")
+    # Initialize webhook logger
+    webhook_logger = WebhookLogger()
+    
+    # Initialize tracking variables
+    existing_mls_count = 0
+    category_results = []
+    new_mls_saved = 0
+    removed_mls_numbers = []
+    
+    try:
+        # Save scraping job history at the start
+        log_message("📝 Saving scraping job history...")
+        save_scraping_job_history("automated python script")
     
     # Base URLs for each property category
     base_urls = [
@@ -363,61 +374,96 @@ async def main():
     # ===== PHASE 2: PROCESS SAVED RESULTS =====
     log_message("\n🔧 PHASE 2: Processing saved results and saving to database...")
     
-    # Get existing MLS numbers from database
-    log_message("🔍 Checking for existing MLS numbers...")
-    existing_mls_numbers = get_existing_mls_numbers()
+        # Get existing MLS numbers from database
+        log_message("🔍 Checking for existing MLS numbers...")
+        existing_mls_numbers = get_existing_mls_numbers()
+        existing_mls_count = len(existing_mls_numbers)
     
-    # Process each category's saved results
-    all_listings = []
-    all_new_mls_numbers = []
-    all_current_mls_numbers = set()
-    parsing_successful = True
-    
-    for base_url in base_urls:
-        category = get_category_name(base_url)
-        log_message(f"\n📋 Processing saved {category.upper()} results...")
+        # Process each category's saved results
+        all_listings = []
+        all_new_mls_numbers = []
+        all_current_mls_numbers = set()
+        parsing_successful = True
         
-        # Parse listings from saved files
-        category_listings = process_saved_category_results(base_url)
-        
-        if not category_listings:
-            log_message(f"⚠️ No listings found for {category.upper()}")
-            parsing_successful = False
-            continue
-        
-        # Collect all current MLS numbers from parsed results
-        category_mls_numbers = {listing['mls_number'] for listing in category_listings if listing.get('mls_number')}
-        all_current_mls_numbers.update(category_mls_numbers)
-        
-        # Filter out already scraped listings
-        new_listings = filter_new_listings(category_listings, existing_mls_numbers)
-        
-        if new_listings:
-            all_listings.extend(new_listings)
-            # Collect new MLS numbers for tracking
-            new_mls_numbers = [listing['mls_number'] for listing in new_listings if listing.get('mls_number')]
-            all_new_mls_numbers.extend(new_mls_numbers)
+        for base_url in base_urls:
+            category = get_category_name(base_url)
+            log_message(f"\n📋 Processing saved {category.upper()} results...")
             
-            # Save new listings to Supabase
-            save_to_supabase(base_url, deduplicate_listings(new_listings))
-            log_message(f"✅ {category.upper()} processing complete: {len(new_listings)} new listings saved")
+            # Parse listings from saved files
+            category_listings = process_saved_category_results(base_url)
+            
+            if not category_listings:
+                log_message(f"⚠️ No listings found for {category.upper()}")
+                parsing_successful = False
+                continue
+            
+            # Collect all current MLS numbers from parsed results
+            category_mls_numbers = {listing['mls_number'] for listing in category_listings if listing.get('mls_number')}
+            all_current_mls_numbers.update(category_mls_numbers)
+            
+            # Filter out already scraped listings
+            new_listings = filter_new_listings(category_listings, existing_mls_numbers)
+            existing_skipped = len(category_listings) - len(new_listings)
+            
+            # Track category results for webhook
+            category_result = {
+                "category": category,
+                "url": base_url,
+                "new_listings": len(new_listings),
+                "existing_skipped": existing_skipped
+            }
+            category_results.append(category_result)
+            
+            if new_listings:
+                all_listings.extend(new_listings)
+                # Collect new MLS numbers for tracking
+                new_mls_numbers = [listing['mls_number'] for listing in new_listings if listing.get('mls_number')]
+                all_new_mls_numbers.extend(new_mls_numbers)
+                
+                # Save new listings to Supabase
+                save_to_supabase(base_url, deduplicate_listings(new_listings))
+                log_message(f"✅ {category.upper()} processing complete: {len(new_listings)} new listings saved")
+            else:
+                log_message(f"ℹ️ {category.upper()}: No new listings to save (all already exist)")
+    
+        # Save new MLS numbers to tracking table
+        if all_new_mls_numbers:
+            save_new_mls_numbers(all_new_mls_numbers)
+            new_mls_saved = len(all_new_mls_numbers)
+        
+        # Mark removed listings only if parsing was successful for all categories
+        if parsing_successful and all_current_mls_numbers:
+            log_message("\n🔍 Checking for removed listings...")
+            removed_mls_set = existing_mls_numbers - all_current_mls_numbers
+            removed_mls_numbers = list(removed_mls_set)
+            mark_removed_listings(all_current_mls_numbers, existing_mls_numbers)
         else:
-            log_message(f"ℹ️ {category.upper()}: No new listings to save (all already exist)")
-    
-    # Save new MLS numbers to tracking table
-    if all_new_mls_numbers:
-        save_new_mls_numbers(all_new_mls_numbers)
-    
-    # Mark removed listings only if parsing was successful for all categories
-    if parsing_successful and all_current_mls_numbers:
-        log_message("\n🔍 Checking for removed listings...")
-        mark_removed_listings(all_current_mls_numbers, existing_mls_numbers)
-    else:
-        log_message("⚠️ Skipping removed listings check due to parsing issues or no current MLS numbers found")
-    
-    log_message(f"\n🏆 SCRAPING COMPLETE! Total new listings processed: {len(all_listings)}")
-    log_message(f"📁 Raw crawl data saved in: {RAW_RESULTS_DIR}")
-    log_message("💡 You can now re-run parsing by running this script again (it will skip crawling if files exist)")
+            log_message("⚠️ Skipping removed listings check due to parsing issues or no current MLS numbers found")
+        
+        log_message(f"\n🏆 SCRAPING COMPLETE! Total new listings processed: {len(all_listings)}")
+        log_message(f"📁 Raw crawl data saved in: {RAW_RESULTS_DIR}")
+        log_message("💡 You can now re-run parsing by running this script again (it will skip crawling if files exist)")
+        
+        # Send success notification with detailed data
+        webhook_logger.send_detailed_notification(
+            script_name="cireba.py",
+            status="success",
+            existing_mls_count=existing_mls_count,
+            category_results=category_results,
+            new_mls_saved=new_mls_saved,
+            removed_mls_details=removed_mls_numbers
+        )
+        
+    except Exception as e:
+        error_message = str(e)
+        log_message(f"❌ SCRAPING FAILED: {error_message}")
+        
+        # Send failure notification
+        webhook_logger.send_detailed_notification(
+            script_name="cireba.py",
+            status="failure",
+            error_message=error_message
+        )
 
 # Run the async main function
 asyncio.run(main())
