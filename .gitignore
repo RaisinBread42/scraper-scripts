@@ -11,3 +11,4 @@ migrate-mls-*.txt
 # Raw crawl results directories (date-based)
 raw_crawl_results_*
 .claude/settings.local.json
+__pycache__/webhook_logger.cpython-313.pyc
