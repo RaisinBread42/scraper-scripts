@@ -68,7 +68,7 @@ def save_crawl_result(result, url, page_number):
     log_message(f"💾 Saved raw result to {filename}")
 
     if result.save_data.error is not None:
-        e = Exception(f"Failed to save result for {url} on page {page_number}: {result.save_data.error}")
+        e = Exception(f"Failed scraping {url} on page {page_number}: {result.save_data.error}")
         trigger_failed_webhook_notification(e, WebhookLogger())
 
     return filepath
