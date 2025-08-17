@@ -323,6 +323,8 @@ async def main():
         # Save scraping job history at the start
         log_message("📝 Saving scraping job history...")
         save_scraping_job_history("automated python script")
+    except Exception as e:
+        log_message(f"❌ Failed to save scraping job history: {e}")
     
     # Base URLs for each property category
     base_urls = [
