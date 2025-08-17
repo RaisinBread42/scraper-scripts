@@ -341,6 +341,7 @@ async def main():
         save_scraping_job_history("automated python script")
     except Exception as e:
         log_message(f"❌ Failed to save scraping job history: {e}")
+        return  # Stop execution immediately
     
     # Base URLs for each property category
     base_urls = [
@@ -392,6 +393,7 @@ async def main():
                 
         except Exception as e:
             trigger_failed_webhook_notification(e, webhook_logger)
+            return  # Stop execution immediately
     
     # ===== PHASE 2: PROCESS SAVED RESULTS =====
     try:
@@ -479,6 +481,7 @@ async def main():
         
     except Exception as e:
         trigger_failed_webhook_notification(e, webhook_logger)
+        return  # Stop execution immediately
 
 # Run the async main function
 asyncio.run(main())
