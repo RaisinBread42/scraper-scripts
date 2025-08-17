@@ -58,7 +58,7 @@ def save_crawl_result(result, url, page_number):
         "success": result.success,
         "markdown": result.markdown if result.success else None,
         "status_code": getattr(result, 'status_code', None),
-        "error": str(result.error) if hasattr(result, 'error') and result.error else None
+        "error": str(result.error_message) if hasattr(result, 'error_message') and result.error_message else None
     }
     
     # Save to JSON file
@@ -66,6 +66,11 @@ def save_crawl_result(result, url, page_number):
         json.dump(save_data, f, ensure_ascii=False, indent=2)
     
     log_message(f"💾 Saved raw result to {filename}")
+
+    if result.save_data.error is not None:
+        e = Exception(f"Failed to save result for {url} on page {page_number}: {result.save_data.error}")
+        trigger_failed_webhook_notification(e, WebhookLogger())
+
     return filepath
 
 def load_crawl_result(filepath):
@@ -307,6 +312,17 @@ def determine_property_type(url, name, link):
         else:
             return "Home"
 
+def trigger_failed_webhook_notification(e, webhook_logger):
+        error_message = str(e)
+        log_message(f"❌ SCRAPING FAILED: {error_message}")
+        
+        # Send failure notification
+        webhook_logger.send_detailed_notification(
+            script_name="cireba.py",
+            status="failure",
+            error_message=error_message
+        )
+
 async def main():
     log_message("🚀 Starting CIREBA scraper with file-based crawling...")
     
@@ -343,35 +359,39 @@ async def main():
         log_message("⏭️ Skipping crawling phase - using existing files")
         log_message("💡 Delete the folder to force re-crawling")
     else:
-        log_message("📡 PHASE 1: Crawling pages and saving raw results...")
-        
-        # Create an instance of AsyncWebCrawler
-        async with AsyncWebCrawler() as crawler:
-            # Configure crawler settings
-            cleaned_md_generator = DefaultMarkdownGenerator(
-                content_source="cleaned_html",  # This is the default
-            )
-
-            config = CrawlerRunConfig(
-                css_selector="div#grid-view",
-                markdown_generator = cleaned_md_generator,
-                wait_for_images = True,
-                scan_full_page = True,
-                scroll_delay=1, 
-            )
-
-            # Crawl each category and save raw results
-            total_pages_crawled = 0
-            for base_url in base_urls:
-                category = get_category_name(base_url)
-                log_message(f"\n🏗️ Crawling {category.upper()} category: {base_url}")
-                
-                pages_crawled = await crawl_category_pages(crawler, base_url, config)
-                total_pages_crawled += pages_crawled
-                
-                log_message(f"✅ {category.upper()} crawling complete: {pages_crawled} pages saved")
+        try:
+            log_message("📡 PHASE 1: Crawling pages and saving raw results...")
             
-            log_message(f"🎯 PHASE 1 COMPLETE: {total_pages_crawled} total pages crawled and saved")
+            # Create an instance of AsyncWebCrawler
+            async with AsyncWebCrawler() as crawler:
+                # Configure crawler settings
+                cleaned_md_generator = DefaultMarkdownGenerator(
+                    content_source="cleaned_html",  # This is the default
+                )
+
+                config = CrawlerRunConfig(
+                    css_selector="div#grid-view",
+                    markdown_generator = cleaned_md_generator,
+                    wait_for_images = True,
+                    scan_full_page = True,
+                    scroll_delay=1, 
+                )
+
+                # Crawl each category and save raw results
+                total_pages_crawled = 0
+                for base_url in base_urls:
+                    category = get_category_name(base_url)
+                    log_message(f"\n🏗️ Crawling {category.upper()} category: {base_url}")
+                    
+                    pages_crawled = await crawl_category_pages(crawler, base_url, config)
+                    total_pages_crawled += pages_crawled
+                    
+                    log_message(f"✅ {category.upper()} crawling complete: {pages_crawled} pages saved")
+                
+                log_message(f"🎯 PHASE 1 COMPLETE: {total_pages_crawled} total pages crawled and saved")
+                
+        except Exception as e:
+            trigger_failed_webhook_notification(e, webhook_logger)
     
     # ===== PHASE 2: PROCESS SAVED RESULTS =====
     try:
@@ -458,15 +478,7 @@ async def main():
         )
         
     except Exception as e:
-        error_message = str(e)
-        log_message(f"❌ SCRAPING FAILED: {error_message}")
-        
-        # Send failure notification
-        webhook_logger.send_detailed_notification(
-            script_name="cireba.py",
-            status="failure",
-            error_message=error_message
-        )
+        trigger_failed_webhook_notification(e, webhook_logger)
 
 # Run the async main function
 asyncio.run(main())
