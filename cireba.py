@@ -374,13 +374,14 @@ async def main():
             log_message(f"🎯 PHASE 1 COMPLETE: {total_pages_crawled} total pages crawled and saved")
     
     # ===== PHASE 2: PROCESS SAVED RESULTS =====
-    log_message("\n🔧 PHASE 2: Processing saved results and saving to database...")
-    
+    try:
+        log_message("\n🔧 PHASE 2: Processing saved results and saving to database...")
+        
         # Get existing MLS numbers from database
         log_message("🔍 Checking for existing MLS numbers...")
         existing_mls_numbers = get_existing_mls_numbers()
         existing_mls_count = len(existing_mls_numbers)
-    
+        
         # Process each category's saved results
         all_listings = []
         all_new_mls_numbers = []
@@ -427,7 +428,7 @@ async def main():
                 log_message(f"✅ {category.upper()} processing complete: {len(new_listings)} new listings saved")
             else:
                 log_message(f"ℹ️ {category.upper()}: No new listings to save (all already exist)")
-    
+        
         # Save new MLS numbers to tracking table
         if all_new_mls_numbers:
             save_new_mls_numbers(all_new_mls_numbers)
