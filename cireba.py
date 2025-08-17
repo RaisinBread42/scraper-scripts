@@ -69,7 +69,7 @@ def save_crawl_result(result, url, page_number):
 
     if result.save_data.error is not None:
         e = Exception(f"Failed scraping {url} on page {page_number}: {result.save_data.error}")
-        trigger_failed_webhook_notification(e, WebhookLogger())
+        raise e
 
     return filepath
 
