@@ -326,7 +326,7 @@ class DuplicateDetector:
                 "price": price,
                 "link": listing.get('link', ''),
                 "image_link": listing.get('image_link'),
-                "type": normalize_listing_type(listing.get('listing_type', ''))
+                "listing_type": normalize_listing_type(listing.get('listing_type', ''))
             }
             
             # Add acres field if it exists (for land listings)

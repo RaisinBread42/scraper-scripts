@@ -1,7 +1,7 @@
 # used to test getting markdown of a web page.
 import re
 import asyncio
-from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
+from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig, DefaultMarkdownGenerator
 
 async def main():
     # Create an instance of AsyncWebCrawler
@@ -9,24 +9,22 @@ async def main():
         # Run the crawler on a URL
 
         cleaned_md_generator = DefaultMarkdownGenerator(
-            content_source="cleaned_html",  # This is the default
+            content_source="raw_html",
         )
 
         config = CrawlerRunConfig(
             # e.g., first 30 items from Hacker News
-            css_selector="div#grid-view",
+            css_selector="div#listing-results",
             markdown_generator = cleaned_md_generator,
-            wait_for_images = True,
+            wait_for_images = False,
             scan_full_page = True,
-            scroll_delay=0.5, 
+            scroll_delay=3, 
+
         )
 
         # URLs collected from all Python scripts in the root directory
         urls = [
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#2",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#3",
-            "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N#4",
+        "https://ecaytrade.com/real-estate/for-sale?page=1&minprice=100000&type=apartments+condos+duplexes+houses+townhouses&location=Bodden%20Town/Breakers,East%20End/High%20Rock,George%20Town,North%20Side,Red%20Bay/Prospect,Rum%20Point/Kaibo,Savannah/Newlands,Seven%20Mile%20Beach,Seven%20Mile%20Beach%20Corridor,South%20Sound,Spotts,West%20Bay&sort=date-high"
         ]
 
         results = await crawler.arun_many(urls=urls, config=config)

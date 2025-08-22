@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
-from utilities.supabase_utils import deduplicate_listings, normalize_listing_type, save_to_supabase
+from utilities.supabase_utils import deduplicate_listings, normalize_listing_type, save_to_ecaytrade_table
 from datetime import datetime
 from duplicate_detector import process_ecaytrade_listings
 from webhook_logger import WebhookLogger
@@ -29,12 +29,10 @@ def log_message(message):
 
 def get_category_name(url):
     """Extract category name from URL for file naming."""
-    if "type=apartments+condos+duplexes+houses+townhouses" in url:
-        return "properties"
-    elif "type=lots--lands" in url:
+    if "type=lots--lands" in url:
         return "land"
     else:
-        return "unknown"
+        return "properties"
 
 def get_location_from_url(url):
     """Extract location from URL based on location parameter."""
@@ -82,7 +80,6 @@ def load_crawl_result(filepath):
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        log_message(f"📖 Loaded raw result from {os.path.basename(filepath)}")
         return data
     except Exception as e:
         log_message(f"❌ Error loading {filepath}: {e}")
@@ -166,27 +163,30 @@ async def crawl_category_pages(crawler, base_url, config):
     log_message(f"🏁 {category.upper()} ({location}) crawling complete. {pages_crawled} pages crawled.")
     return pages_crawled
 
+
 def parse_markdown_list(md_text, url=None, location=None):
-    # Improved regex to handle both regular prices and "Price Upon Request" cases
-    # Pattern captures: [ ![NAME](IMG) PROPERTY_TYPE (PRICE or "Price Upon Request") ADDITIONAL_CONTENT ](LINK)
+    # Updated regex to capture location from __Location__ pattern in the markdown
+    # Pattern captures: [ ![NAME](IMG) PROPERTY_TYPE (PRICE or "Price Upon Request") CONTENT __LOCATION__ ](LINK)
     pattern = re.compile(
-        r'\[ !\[(.*?)\]\(([^\)]*)\)\s*(Condos|Apartments|Houses|Townhouses|Lots & Lands)\s*(?:(CI\$|US\$)\s*([\d,]+)|Price Upon Request)(.*?)\]\((https://ecaytrade\.com/advert/\d+)\)',
+        r'\[ !\[(.*?)\]\(([^\)]*)\)\s*(Condos|Apartments|Houses|Townhouses|Lots & Lands)\s*(?:(CI\$|US\$)\s*([\d,]+)|Price Upon Request)(.*?)__([^_]+)__\s*\]\((https://ecaytrade\.com/advert/\d+)\)',
         re.DOTALL
     )
     results = []
     
-    # Extract location from URL if not provided
-    if not location and url:
-        location = get_location_from_url(url)
+    # Extract base location from URL if not provided (Grand Cayman, Cayman Brac, Little Cayman)
+    base_location = location
+    if not base_location and url:
+        base_location = get_location_from_url(url)
     
     for match in pattern.finditer(md_text):
         name = match.group(1).strip()
         image_link = match.group(2).strip()
         property_type = match.group(3).strip()
-        currency = match.group(4)  # Will be None for "Price Upon Request"
-        price = match.group(5)     # Will be None for "Price Upon Request"
+        currency = match.group(4)
+        price = match.group(5)
         additional_content = match.group(6).strip()
-        link = match.group(7)
+        specific_location = match.group(7).strip()  # Location from __Location__ pattern
+        link = match.group(8)
         
         # Handle price formatting
         if currency and price:
@@ -194,27 +194,27 @@ def parse_markdown_list(md_text, url=None, location=None):
             price_clean = price.replace(",", "")
             currency_clean = currency
         else:
-            # "Price Upon Request" case
             price_clean = "0"  # Use "0" to indicate price upon request in numeric fields
-            currency_clean = "Price Upon Request"
+            currency_clean = "US$"
         
         # Normalize the property type using the utility function
         listing_type = normalize_listing_type(property_type)
         
-        # Append location to name if provided
-        if location:
-            name_with_location = f"{name}, {location}"
+        # Format location with base location appended
+        if specific_location:
+            final_location = f"{specific_location}, {base_location}"
         else:
-            name_with_location = name
+            final_location = base_location
         
         results.append({
-            "name": name_with_location,
+            "name": name,
             "currency": currency_clean,
             "price": price_clean,
             "link": link,
             "listing_type": listing_type,
             "image_link": image_link,
-            "location": location,  # Store location separately as well
+            "location": final_location,  # Store formatted location with base appended
+            "base_location": base_location,  # Store the URL-derived location as well
             "raw_property_type": property_type  # Keep original for debugging
         })
     
@@ -252,12 +252,9 @@ def process_saved_category_results(category):
         log_message(f"✅ Parsed {len(parsed_listings)} listings from {os.path.basename(filepath)} ({location})")
         all_category_listings.extend(parsed_listings)
     
-    log_message(f"🎯 Total {len(all_category_listings)} listings processed for {category}")
     return all_category_listings
 
 async def main():
-    log_message("🚀 Starting EcayTrade scraper with file-based crawling...")
-    
     # Initialize webhook logger
     webhook_logger = WebhookLogger()
     
@@ -282,7 +279,6 @@ async def main():
     if skip_crawling:
         log_message(f"📁 Found existing crawl data in {RAW_RESULTS_DIR}")
         log_message("⏭️ Skipping crawling phase - using existing files")
-        log_message("💡 Delete the folder to force re-crawling")
     else:
         try:
             log_message("📡 PHASE 1: Crawling pages and saving raw results...")
@@ -290,13 +286,13 @@ async def main():
             # Create an instance of AsyncWebCrawler
             async with AsyncWebCrawler() as crawler:
                 cleaned_md_generator = DefaultMarkdownGenerator(
-                    content_source="cleaned_html",  # This is the default
+                    content_source="raw_html",  # This is the default
                 )
 
                 config = CrawlerRunConfig(
                     css_selector="div#listing-results",
                     markdown_generator = cleaned_md_generator,
-                    wait_for_images = True,
+                    wait_for_images = False,
                     scan_full_page = True,
                     scroll_delay=1, 
                 )
@@ -362,8 +358,6 @@ async def main():
                 first_crawl_data = load_crawl_result(saved_files[0])
                 if first_crawl_data:
                     base_url = first_crawl_data['url']
-                    # Remove page number to get base URL pattern
-                    base_url = base_url.replace("page=1", "page=1")  # Keep original for now
                     parsed_listings_by_url[base_url] = deduplicate_listings(category_listings)
                     log_message(f"✅ Prepared {len(category_listings)} {category} listings for duplicate detection")
                     
@@ -380,14 +374,11 @@ async def main():
         if parsed_listings_by_url:
             log_message(f"\n🔍 PHASE 3: Running duplicate detection and batch save...")
             total_listings = sum(len(listings) for listings in parsed_listings_by_url.values())
-            log_message(f"📊 Total listings to process: {total_listings}")
             
             # Call duplicate detector
             success, prepared_listings = process_ecaytrade_listings(parsed_listings_by_url)
             
             if success:
-                log_message(f"✅ Duplicate detection completed successfully")
-                
                 # Save new listings to Supabase using existing function like cireba.py
                 if prepared_listings:
                     log_message(f"💾 Saving {len(prepared_listings)} new listings to Supabase...")
@@ -395,17 +386,14 @@ async def main():
                     # Use the first URL as target_url for saving
                     first_url = next(iter(parsed_listings_by_url.keys())) if parsed_listings_by_url else ""
                     
-                    # Use the same save function as cireba.py - prepared_listings already in correct format
-                    if save_to_supabase(first_url, deduplicate_listings(prepared_listings)):
+                    # Save to ecaytrade_listings table - prepared_listings already in correct format
+                    if save_to_ecaytrade_table(first_url, deduplicate_listings(prepared_listings)):
                         new_listings_saved = len(prepared_listings)
                         log_message(f"✅ Successfully saved {len(prepared_listings)} new listings to Supabase")
-                        log_message(f"\n🏆 PROCESSING COMPLETE! {len(prepared_listings)} new listings saved, duplicates handled via webhook.")
                     else:
                         log_message(f"❌ Failed to save listings to Supabase")
-                        log_message(f"\n⚠️ PROCESSING COMPLETED WITH WARNINGS. Duplicate detection succeeded but save failed.")
                 else:
                     log_message(f"ℹ️ No new listings to save (all were duplicates or below threshold)")
-                    log_message(f"\n🏆 PROCESSING COMPLETE! No new listings to save.")
                     
                 # Update category results with actual new listings count
                 if category_results:
@@ -422,10 +410,7 @@ async def main():
         else:
             log_message(f"\n⚠️ No listings found to process.")
         
-        log_message(f"📁 Raw crawl data saved in: {RAW_RESULTS_DIR}")
-        log_message("💡 You can now re-run parsing by running this script again (it will skip crawling if files exist)")
-        
-        # Send webhook notification like cireba.py
+        # Send webhook notification
         try:
             webhook_logger.send_detailed_notification(
                 script_name="ecaytrade.py",

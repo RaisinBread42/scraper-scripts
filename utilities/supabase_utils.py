@@ -73,8 +73,91 @@ def deduplicate_listings(listings):
             unique.append(item)
     return unique
 
-def save_to_supabase(target_url: str, results: List[Dict]) -> bool:
-    """Save scraping results to Supabase table."""
+def prepare_listing_row(result: Dict, target_url: str, include_mls: bool = True) -> Dict:
+    """
+    Prepare a single listing result for database insertion.
+    
+    Args:
+        result: Dictionary with scraped listing data
+        target_url: The URL that was scraped
+        include_mls: Whether to include mls_number field (True for cireba, False for ecaytrade)
+        
+    Returns:
+        dict: Prepared row data for database insertion
+    """
+    # Convert string values to appropriate types
+    sqft = None
+    if result.get('sqft'):
+        try:
+            sqft = int(result['sqft'].replace(',', '')) if isinstance(result['sqft'], str) else int(result['sqft'])
+        except (ValueError, TypeError):
+            sqft = None
+    
+    beds = None
+    if result.get('beds'):
+        try:
+            beds = int(float(result['beds'])) if isinstance(result['beds'], str) else int(result['beds'])
+        except (ValueError, TypeError):
+            beds = None
+    
+    baths = None
+    if result.get('baths'):
+        try:
+            baths = int(float(result['baths'])) if isinstance(result['baths'], str) else int(result['baths'])
+        except (ValueError, TypeError):
+            baths = None
+    
+    price = None
+    if result.get('price'):
+        try:
+            price = float(result['price'].replace(',', '')) if isinstance(result['price'], str) else float(result['price'])
+        except (ValueError, TypeError):
+            price = None
+    
+    acres = None
+    if result.get('acres'):
+        try:
+            acres = float(result['acres']) if isinstance(result['acres'], str) else float(result['acres'])
+        except (ValueError, TypeError):
+            acres = None
+    
+    row = {
+        "target_url": target_url,
+        "name": result.get('name'),
+        "sqft": sqft,
+        "beds": beds,
+        "baths": baths,
+        "location": result.get('location'),
+        "currency": result.get('currency'),
+        "price": price,
+        "link": result.get('link'),
+        "image_link": result.get('image_link'),
+        "type": normalize_listing_type(result.get('listing_type'))
+    }
+    
+    # Add mls_number field only for tables that have it (cireba)
+    if include_mls:
+        row["mls_number"] = result.get('mls_number')
+    
+    # Add acres field if it exists (for land listings)
+    if acres is not None:
+        row["acres"] = acres
+        
+    return row
+
+def save_to_listings_table(target_url: str, results: List[Dict], table_name: str, include_mls: bool = True) -> bool:
+    """
+    Save parsed results to specified listings table.
+    
+    Args:
+        target_url: The URL that was scraped
+        results: List of dictionaries with scraped data
+        table_name: Name of the table to save to ('cireba_listings' or 'ecaytrade_listings')
+        include_mls: Whether to include mls_number field (True for cireba, False for ecaytrade)
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
         # Initialize Supabase client with service role key
         supabase: Client = create_client(
@@ -85,79 +168,46 @@ def save_to_supabase(target_url: str, results: List[Dict]) -> bool:
         # Prepare data for insertion - each result becomes a separate row
         rows_to_insert = []
         for result in results:
-            # Convert string values to appropriate types
-            sqft = None
-            if result.get('sqft'):
-                try:
-                    sqft = int(result['sqft'].replace(',', '')) if isinstance(result['sqft'], str) else int(result['sqft'])
-                except (ValueError, TypeError):
-                    sqft = None
-            
-            beds = None
-            if result.get('beds'):
-                try:
-                    beds = int(float(result['beds'])) if isinstance(result['beds'], str) else int(result['beds'])
-                except (ValueError, TypeError):
-                    beds = None
-            
-            baths = None
-            if result.get('baths'):
-                try:
-                    baths = int(float(result['baths'])) if isinstance(result['baths'], str) else int(result['baths'])
-                except (ValueError, TypeError):
-                    baths = None
-            
-            price = None
-            if result.get('price'):
-                try:
-                    price = float(result['price'].replace(',', '')) if isinstance(result['price'], str) else float(result['price'])
-                except (ValueError, TypeError):
-                    price = None
-            
-            acres = None
-            if result.get('acres'):
-                try:
-                    acres = float(result['acres']) if isinstance(result['acres'], str) else float(result['acres'])
-                except (ValueError, TypeError):
-                    acres = None
-            
-            row = {
-                "target_url": target_url,
-                "mls_number": result.get('mls_number'),
-                "name": result.get('name'),
-                "sqft": sqft,
-                "beds": beds,
-                "baths": baths,
-                "location": result.get('location'),
-                "currency": result.get('currency'),
-                "price": price,
-                "link": result.get('link'),
-                "image_link": result.get('image_link'),
-                "type": normalize_listing_type(result.get('listing_type'))
-            }
-            
-            # Add acres field if it exists (for land listings)
-            if acres is not None:
-                row["acres"] = acres
+            row = prepare_listing_row(result, target_url, include_mls)
             rows_to_insert.append(row)
         
         # Insert all rows at once
         if rows_to_insert:
-            response = supabase.table('cireba_listings').insert(rows_to_insert).execute()
+            response = supabase.table(table_name).insert(rows_to_insert).execute()
             
             if response.data:
-                log_supabase_message(f"✅ Saved {len(response.data)} listings for {target_url}")
+                log_supabase_message(f"✅ Saved {len(response.data)} listings to {table_name} for {target_url}")
                 return True
             else:
-                log_supabase_message(f"❌ Failed to save results for {target_url}")
+                log_supabase_message(f"❌ Failed to save results to {table_name} for {target_url}")
                 return False
         else:
-            log_supabase_message(f"⚠️ No valid results to save for {target_url}")
+            log_supabase_message(f"⚠️ No valid results to save to {table_name} for {target_url}")
             return True
             
     except Exception as e:
-        log_supabase_message(f"Error saving to Supabase: {e}")
+        log_supabase_message(f"Error saving to {table_name}: {e}")
         return False
+
+def save_to_supabase(target_url: str, results: List[Dict]) -> bool:
+    """
+    Save scraping results to Supabase cireba_listings table.
+    Legacy function for backward compatibility.
+    """
+    return save_to_listings_table(target_url, results, 'cireba_listings')
+
+def save_to_ecaytrade_table(target_url: str, results: List[Dict]) -> bool:
+    """
+    Save parsed results to Supabase ecaytrade_listings table.
+    
+    Args:
+        target_url: The URL that was scraped
+        results: List of dictionaries with scraped data
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    return save_to_listings_table(target_url, results, 'ecaytrade_listings', include_mls=False)
 
 def get_existing_mls_numbers() -> set:
     """Fetch all existing MLS numbers from mls_listings table using pagination."""
