@@ -167,9 +167,11 @@ async def crawl_category_pages(crawler, base_url, config):
     return pages_crawled
 
 def parse_markdown_list(md_text, url=None, location=None):
-    # Enhanced regex to capture property type and image: [ ![NAME](IMG) PROPERTY_TYPE PRICE ... NAME ](LINK)
+    # Improved regex to handle both regular prices and "Price Upon Request" cases
+    # Pattern captures: [ ![NAME](IMG) PROPERTY_TYPE (PRICE or "Price Upon Request") ADDITIONAL_CONTENT ](LINK)
     pattern = re.compile(
-        r'\[ !\[(.*?)\]\(([^\)]*)\) (Condos|Apartments|Houses|Townhouses|Lots & Lands) (CI\$|US\$)\s*([\d,]+).*?\]\((https://ecaytrade\.com/advert/\d+)\)'
+        r'\[ !\[(.*?)\]\(([^\)]*)\)\s*(Condos|Apartments|Houses|Townhouses|Lots & Lands)\s*(?:(CI\$|US\$)\s*([\d,]+)|Price Upon Request)(.*?)\]\((https://ecaytrade\.com/advert/\d+)\)',
+        re.DOTALL
     )
     results = []
     
@@ -181,9 +183,20 @@ def parse_markdown_list(md_text, url=None, location=None):
         name = match.group(1).strip()
         image_link = match.group(2).strip()
         property_type = match.group(3).strip()
-        currency = match.group(4)
-        price = match.group(5).replace(",", "")
-        link = match.group(6)
+        currency = match.group(4)  # Will be None for "Price Upon Request"
+        price = match.group(5)     # Will be None for "Price Upon Request"
+        additional_content = match.group(6).strip()
+        link = match.group(7)
+        
+        # Handle price formatting
+        if currency and price:
+            # Regular price case
+            price_clean = price.replace(",", "")
+            currency_clean = currency
+        else:
+            # "Price Upon Request" case
+            price_clean = "0"  # Use "0" to indicate price upon request in numeric fields
+            currency_clean = "Price Upon Request"
         
         # Normalize the property type using the utility function
         listing_type = normalize_listing_type(property_type)
@@ -196,8 +209,8 @@ def parse_markdown_list(md_text, url=None, location=None):
         
         results.append({
             "name": name_with_location,
-            "currency": currency,
-            "price": price,
+            "currency": currency_clean,
+            "price": price_clean,
             "link": link,
             "listing_type": listing_type,
             "image_link": image_link,
