@@ -37,7 +37,7 @@ def log_mls_filter_message(message):
 
 class MLSListingDetector:
     def __init__(self):
-        self.existing_mls_cache = []
+        self.mls_listings = []
         self.mls_matches_found = []
         self.filtered_listings = []
         self.supabase = None
@@ -55,9 +55,9 @@ class MLSListingDetector:
             return False
     
     
-    def load_existing_mls_cache(self) -> bool:
-        """Load all existing MLS listings from Cireba into memory cache"""
-        log_mls_filter_message("🔄 Loading existing MLS listings into memory cache...")
+    def load_mls_listings(self) -> bool:
+        """Load all existing MLS listings from Cireba"""
+        log_mls_filter_message("🔄 Loading MLS listings from Cireba table...")
         
         if not self.initialize_supabase():
             return False
@@ -88,7 +88,7 @@ class MLSListingDetector:
                 # All listings from Supabase are already in USD, no conversion needed
                 price_usd = float(listing.get('price', 0))
                 
-                self.existing_mls_cache.append({
+                self.mls_listings.append({
                     'id': listing['id'],
                     'name': listing.get('name', ''),
                     'price_usd': price_usd,
@@ -96,7 +96,7 @@ class MLSListingDetector:
                     'source': self.extract_source_from_url(listing.get('target_url', ''))
                 })
             
-            log_mls_filter_message(f"✅ Loaded {len(self.existing_mls_cache)} existing listings into cache")
+            log_mls_filter_message(f"✅ Loaded {len(self.mls_listings)} MLS listings from Cireba")
             return True
             
         except Exception as e:
@@ -134,7 +134,7 @@ class MLSListingDetector:
         new_price_usd = new_listing.get('price_usd', 0)
         new_name = new_listing.get('name', '')
         
-        for existing in self.existing_mls_cache:
+        for existing in self.mls_listings:
             # First check: exact price match
             if self.exact_price_match(new_price_usd, existing['price_usd']):
                 # Second check: fuzzy name match
@@ -339,9 +339,9 @@ def filter_mls_listings(parsed_listings_by_url: Dict[str, List[Dict]]) -> Tuple[
     """
     detector = MLSListingDetector()
     
-    # Phase 1: Load existing MLS cache
-    if not detector.load_existing_mls_cache():
-        log_mls_filter_message("❌ Failed to load existing MLS cache")
+    # Phase 1: Load MLS listings
+    if not detector.load_mls_listings():
+        log_mls_filter_message("❌ Failed to load MLS listings")
         return False, []
     
     # Phase 2: Process all new listings
