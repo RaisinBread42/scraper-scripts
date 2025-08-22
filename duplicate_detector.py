@@ -369,22 +369,3 @@ def filter_mls_listings(parsed_listings_by_url: Dict[str, List[Dict]]) -> Tuple[
     detector.log_final_summary()
     
     return webhook_success, prepared_listings
-
-if __name__ == "__main__":
-    # Test with sample data
-    sample_data = {
-        "https://ecaytrade.com/real-estate/for-sale?page=1": [
-            {
-                "name": "Test Luxury Condo",
-                "currency": "CI$",
-                "price": "450000",
-                "link": "https://ecaytrade.com/advert/123456",
-                "listing_type": "Condo"
-            }
-        ]
-    }
-    
-    log_mls_filter_message("🧪 Testing MLS listing filter with sample data...")
-    success, prepared_listings = filter_mls_listings(sample_data)
-    log_mls_filter_message(f"Test result: {'✅ Success' if success else '❌ Failed'}")
-    log_mls_filter_message(f"Prepared {len(prepared_listings)} listings for save")
