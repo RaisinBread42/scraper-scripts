@@ -79,7 +79,7 @@ class DuplicateDetector:
             return False
         
         try:
-            # Fetch all listings with pagination
+            # Fetch all listings with pagination - only from cireba_listings for duplicate comparison
             all_listings = []
             page_size = 1000
             offset = 0
@@ -99,12 +99,10 @@ class DuplicateDetector:
                     
                 offset += page_size
             
-            # Convert to cache format with USD pricing
+            # Convert to cache format - all Supabase listings are already in USD
             for listing in all_listings:
-                # Convert price to USD if needed
-                currency = listing.get('currency', 'US$')
-                price_str = str(listing.get('price', 0))
-                _, price_usd = self.convert_ci_to_usd(price_str, currency)
+                # All listings from Supabase are already in USD, no conversion needed
+                price_usd = float(listing.get('price', 0))
                 
                 self.existing_listings_cache.append({
                     'id': listing['id'],

@@ -34,6 +34,17 @@ def get_category_name(url):
     else:
         return "properties"
 
+def convert_ci_to_usd(price_str, currency):
+    """Convert CI$ to USD using exact rate: 1 CI$ = 1.2195121951219512195121951219512 USD"""
+    if currency == "CI$" and price_str:
+        try:
+            ci_amount = float(price_str.replace(",", ""))
+            usd_amount = ci_amount * 1.2195121951219512195121951219512
+            return "US$", str(round(usd_amount, 2))
+        except ValueError:
+            return currency, price_str
+    return currency, price_str
+
 def get_location_from_url(url):
     """Extract location from URL based on location parameter."""
     if "location=Cayman%20Brac" in url:
@@ -339,6 +350,17 @@ async def main():
             
             # Parse listings from saved files
             category_listings = process_saved_category_results(category)
+            
+            # Apply currency conversion to all parsed listings
+            if category_listings:
+                log_message(f"🔄 Converting currencies for {len(category_listings)} {category} listings...")
+                for listing in category_listings:
+                    original_currency = listing.get('currency', 'CI$')
+                    original_price = listing.get('price', '0')
+                    converted_currency, converted_price = convert_ci_to_usd(original_price, original_currency)
+                    listing['currency'] = converted_currency
+                    listing['price'] = converted_price
+                log_message(f"✅ Currency conversion completed for {category} listings")
             
             if not category_listings:
                 log_message(f"⚠️ No listings found for {category.upper()}")
