@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Duplicate Detection and Batch Processing Script for Property Listings
-Handles deduplication, currency conversion, and batch operations for scraped listings.
+MLS Listing Filter Script for Property Listings
+Filters out EcayTrade listings that are already included in Cireba MLS listings.
 """
 
 import os
@@ -27,21 +27,20 @@ load_dotenv()
 # Webhook URL placeholder - will be replaced with actual URL
 WEBHOOK_URL = "https://n8n.obsidiansoftwaredev.com/webhook/13cf59c6-974b-4659-8ebb-2e171b80cbf1"
 
-# Create log file with today's date for duplicate detector
-DETECTOR_LOG_FILE = f"duplicate-detector-{datetime.now().strftime('%Y-%m-%d')}.txt"
+# Create log file with today's date for MLS listing detector
+MLS_FILTER_LOG_FILE = f"mls-listing-detector-{datetime.now().strftime('%Y-%m-%d')}.txt"
 
-def log_detector_message(message):
-    """Write message to duplicate detector log file."""
-    with open(DETECTOR_LOG_FILE, 'a', encoding='utf-8') as f:
+def log_mls_filter_message(message):
+    """Write message to MLS listing filter log file."""
+    with open(MLS_FILTER_LOG_FILE, 'a', encoding='utf-8') as f:
         f.write(f"{datetime.now().strftime('%H:%M:%S')} - {message}\n")
 
-class DuplicateDetector:
+class MLSListingDetector:
     def __init__(self):
-        self.existing_listings_cache = []
-        self.duplicates_found = []
-        self.new_listings = []
+        self.existing_mls_cache = []
+        self.mls_matches_found = []
+        self.filtered_listings = []
         self.supabase = None
-        self.ci_to_usd_rate = 1.2195121951219512195121951219512
         
     def initialize_supabase(self):
         """Initialize Supabase client"""
@@ -52,28 +51,13 @@ class DuplicateDetector:
             )
             return True
         except Exception as e:
-            log_detector_message(f"❌ Failed to initialize Supabase: {e}")
+            log_mls_filter_message(f"❌ Failed to initialize Supabase: {e}")
             return False
     
-    def convert_ci_to_usd(self, price_str: str, currency: str) -> Tuple[str, float]:
-        """Convert CI$ to USD using exact rate from cireba.py"""
-        if currency == "CI$" and price_str:
-            try:
-                ci_amount = float(price_str.replace(",", ""))
-                usd_amount = ci_amount * self.ci_to_usd_rate
-                return "US$", round(usd_amount, 2)
-            except (ValueError, TypeError):
-                return currency, float(price_str.replace(",", "")) if price_str else 0.0
-        elif currency == "US$":
-            try:
-                return currency, float(price_str.replace(",", "")) if price_str else 0.0
-            except (ValueError, TypeError):
-                return currency, 0.0
-        return currency, 0.0
     
-    def load_existing_listings_cache(self) -> bool:
-        """Load all existing listings from Supabase into memory cache"""
-        log_detector_message("🔄 Loading existing listings into memory cache...")
+    def load_existing_mls_cache(self) -> bool:
+        """Load all existing MLS listings from Cireba into memory cache"""
+        log_mls_filter_message("🔄 Loading existing MLS listings into memory cache...")
         
         if not self.initialize_supabase():
             return False
@@ -104,7 +88,7 @@ class DuplicateDetector:
                 # All listings from Supabase are already in USD, no conversion needed
                 price_usd = float(listing.get('price', 0))
                 
-                self.existing_listings_cache.append({
+                self.existing_mls_cache.append({
                     'id': listing['id'],
                     'name': listing.get('name', ''),
                     'price_usd': price_usd,
@@ -112,11 +96,11 @@ class DuplicateDetector:
                     'source': self.extract_source_from_url(listing.get('target_url', ''))
                 })
             
-            log_detector_message(f"✅ Loaded {len(self.existing_listings_cache)} existing listings into cache")
+            log_mls_filter_message(f"✅ Loaded {len(self.existing_mls_cache)} existing listings into cache")
             return True
             
         except Exception as e:
-            log_detector_message(f"❌ Error loading existing listings: {e}")
+            log_mls_filter_message(f"❌ Error loading existing listings: {e}")
             return False
     
     def extract_source_from_url(self, url: str) -> str:
@@ -145,12 +129,12 @@ class DuplicateDetector:
         similarity = fuzz.ratio(clean_name1, clean_name2)
         return similarity
     
-    def check_duplicate(self, new_listing: Dict) -> Optional[Dict]:
-        """Check if new listing is duplicate of existing listing"""
+    def check_mls_match(self, new_listing: Dict) -> Optional[Dict]:
+        """Check if EcayTrade listing matches existing MLS listing"""
         new_price_usd = new_listing.get('price_usd', 0)
         new_name = new_listing.get('name', '')
         
-        for existing in self.existing_listings_cache:
+        for existing in self.existing_mls_cache:
             # First check: exact price match
             if self.exact_price_match(new_price_usd, existing['price_usd']):
                 # Second check: fuzzy name match
@@ -164,50 +148,47 @@ class DuplicateDetector:
         return None
     
     def process_listing(self, listing: Dict, source_url: str) -> None:
-        """Process a single listing for duplicates and currency conversion"""
-        # Convert price to USD
-        original_currency = listing.get('currency', 'US$')
-        original_price = listing.get('price', '0')
-        
-        currency_usd, price_usd = self.convert_ci_to_usd(original_price, original_currency)
+        """Process a single listing for duplicates - assumes USD pricing"""
+        # All listings should already be in USD format
+        price_str = listing.get('price', '0')
+        try:
+            price_usd = float(price_str.replace(",", "")) if price_str else 0.0
+        except (ValueError, TypeError):
+            price_usd = 0.0
         
         # Skip if below threshold
         if price_usd < 200000:
             listing_name = listing.get('name', '')
-            log_detector_message(f"⏭️ Skipped listing below $200k threshold: {listing_name[:30]}... (${price_usd:,.0f})")
+            log_mls_filter_message(f"⏭️ Skipped listing below $200k threshold: {listing_name[:30]}... (${price_usd:,.0f})")
             return
         
         # Create processed listing
         processed_listing = listing.copy()
         processed_listing.update({
             'price_usd': price_usd,
-            'currency': 'US$',  # Always store as USD
-            'price': str(int(price_usd)),  # Store USD price as string
-            'original_currency': original_currency,
-            'original_price': original_price,
             'source_url': source_url,
             'source': self.extract_source_from_url(source_url)
         })
         
-        # Check for duplicates
-        duplicate_match = self.check_duplicate(processed_listing)
+        # Check for MLS matches
+        mls_match = self.check_mls_match(processed_listing)
         
-        if duplicate_match:
-            # Add to duplicates
-            self.duplicates_found.append({
+        if mls_match:
+            # Add to MLS matches (listings already in MLS)
+            self.mls_matches_found.append({
                 'new_listing': processed_listing,
-                'duplicate_match': duplicate_match
+                'mls_match': mls_match
             })
         else:
-            # Add to new listings
-            self.new_listings.append(processed_listing)
+            # Add to filtered listings (not in MLS)
+            self.filtered_listings.append(processed_listing)
     
     def send_batch_webhook(self) -> bool:
         """Send batch webhook notification for all duplicates found"""
-        if not self.duplicates_found:
+        if not self.mls_matches_found:
             return True
         
-        log_detector_message(f"📤 Sending webhook notification for {len(self.duplicates_found)} duplicates...")
+        log_mls_filter_message(f"📤 Sending webhook notification for {len(self.mls_matches_found)} duplicates...")
         
         # Prepare webhook payload
         payload = {
@@ -215,23 +196,21 @@ class DuplicateDetector:
             "script_run": {
                 "source": "ecaytrade",
                 "timestamp": datetime.now().isoformat(),
-                "total_processed": len(self.duplicates_found) + len(self.new_listings),
-                "duplicates_count": len(self.duplicates_found),
-                "new_listings_count": len(self.new_listings)
+                "total_processed": len(self.mls_matches_found) + len(self.filtered_listings),
+                "duplicates_count": len(self.mls_matches_found),
+                "new_listings_count": len(self.filtered_listings)
             },
             "duplicates": []
         }
         
         # Add duplicate details
-        for dup in self.duplicates_found:
+        for dup in self.mls_matches_found:
             new_listing = dup['new_listing']
             match_info = dup['duplicate_match']
             
             duplicate_entry = {
                 "new_listing": {
                     "name": new_listing.get('name', ''),
-                    "original_currency": new_listing.get('original_currency', ''),
-                    "original_price": new_listing.get('original_price', ''),
                     "price_usd": new_listing.get('price_usd', 0),
                     "link": new_listing.get('link', ''),
                     "source": new_listing.get('source', '')
@@ -256,28 +235,28 @@ class DuplicateDetector:
             )
             
             if response.status_code == 200:
-                log_detector_message(f"✅ Webhook sent successfully")
+                log_mls_filter_message(f"✅ Webhook sent successfully")
                 return True
             else:
-                log_detector_message(f"⚠️ Webhook returned status code: {response.status_code}")
+                log_mls_filter_message(f"⚠️ Webhook returned status code: {response.status_code}")
                 # Don't treat webhook errors as failures that prevent saving
                 return True
                 
         except Exception as e:
-            log_detector_message(f"❌ Error sending webhook: {e}")
+            log_mls_filter_message(f"❌ Error sending webhook: {e}")
             return False
     
     def get_new_listings_for_save(self) -> List[Dict]:
         """Return processed new listings ready for Supabase save"""
-        if not self.new_listings:
-            log_detector_message("ℹ️ No new listings to prepare for save")
+        if not self.filtered_listings:
+            log_mls_filter_message("ℹ️ No new listings to prepare for save")
             return []
         
-        log_detector_message(f"📋 Preparing {len(self.new_listings)} new listings for save...")
+        log_mls_filter_message(f"📋 Preparing {len(self.filtered_listings)} new listings for save...")
         
         prepared_listings = []
         
-        for listing in self.new_listings:
+        for listing in self.filtered_listings:
             # Convert string values to appropriate types
             sqft = None
             if listing.get('sqft'):
@@ -333,24 +312,24 @@ class DuplicateDetector:
                 
             prepared_listings.append(row)
         
-        log_detector_message(f"✅ Prepared {len(prepared_listings)} listings for save")
+        log_mls_filter_message(f"✅ Prepared {len(prepared_listings)} listings for save")
         return prepared_listings
     
     def log_final_summary(self):
         """Log final processing summary"""
-        total_processed = len(self.duplicates_found) + len(self.new_listings)
+        total_processed = len(self.mls_matches_found) + len(self.filtered_listings)
         
-        log_detector_message("🏆 DUPLICATE DETECTION COMPLETE!")
-        log_detector_message(f"📊 Total listings processed: {total_processed}")
-        log_detector_message(f"🆕 New listings ready for save: {len(self.new_listings)}")
-        log_detector_message(f"🔄 Duplicates detected: {len(self.duplicates_found)}")
+        log_mls_filter_message("🏆 DUPLICATE DETECTION COMPLETE!")
+        log_mls_filter_message(f"📊 Total listings processed: {total_processed}")
+        log_mls_filter_message(f"🆕 New listings ready for save: {len(self.filtered_listings)}")
+        log_mls_filter_message(f"🔄 Duplicates detected: {len(self.mls_matches_found)}")
         
-        if self.duplicates_found:
-            log_detector_message(f"📤 Webhook notification sent for duplicates")
+        if self.mls_matches_found:
+            log_mls_filter_message(f"📤 Webhook notification sent for duplicates")
 
-def process_ecaytrade_listings(parsed_listings_by_url: Dict[str, List[Dict]]) -> Tuple[bool, List[Dict]]:
+def filter_mls_listings(parsed_listings_by_url: Dict[str, List[Dict]]) -> Tuple[bool, List[Dict]]:
     """
-    Main function to process parsed listings from ecaytrade.py
+    Main function to filter EcayTrade listings against existing MLS listings
     
     Args:
         parsed_listings_by_url: Dict mapping source URLs to lists of parsed listings
@@ -358,27 +337,27 @@ def process_ecaytrade_listings(parsed_listings_by_url: Dict[str, List[Dict]]) ->
     Returns:
         Tuple[bool, List[Dict]]: (success, prepared_listings_for_save)
     """
-    detector = DuplicateDetector()
+    detector = MLSListingDetector()
     
-    # Phase 1: Load existing listings cache
-    if not detector.load_existing_listings_cache():
-        log_detector_message("❌ Failed to load existing listings cache")
+    # Phase 1: Load existing MLS cache
+    if not detector.load_existing_mls_cache():
+        log_mls_filter_message("❌ Failed to load existing MLS cache")
         return False, []
     
     # Phase 2: Process all new listings
-    log_detector_message("🔍 Processing new listings for duplicates...")
+    log_mls_filter_message("🔍 Processing new listings for duplicates...")
     
     total_input_listings = 0
     for source_url, listings in parsed_listings_by_url.items():
         total_input_listings += len(listings)
-        log_detector_message(f"Processing {len(listings)} listings from {source_url}")
+        log_mls_filter_message(f"Processing {len(listings)} listings from {source_url}")
         
         for listing in listings:
             detector.process_listing(listing, source_url)
     
-    log_detector_message(f"✅ Processed {total_input_listings} input listings")
-    log_detector_message(f"   → {len(detector.new_listings)} new listings (>= $200k USD)")
-    log_detector_message(f"   → {len(detector.duplicates_found)} duplicates detected")
+    log_mls_filter_message(f"✅ Processed {total_input_listings} input listings")
+    log_mls_filter_message(f"   → {len(detector.new_listings)} new listings (>= $200k USD)")
+    log_mls_filter_message(f"   → {len(detector.duplicates_found)} duplicates detected")
     
     # Phase 3: Webhook for duplicates
     webhook_success = detector.send_batch_webhook()
@@ -405,7 +384,7 @@ if __name__ == "__main__":
         ]
     }
     
-    log_detector_message("🧪 Testing duplicate detector with sample data...")
-    success, prepared_listings = process_ecaytrade_listings(sample_data)
-    log_detector_message(f"Test result: {'✅ Success' if success else '❌ Failed'}")
-    log_detector_message(f"Prepared {len(prepared_listings)} listings for save")
+    log_mls_filter_message("🧪 Testing MLS listing filter with sample data...")
+    success, prepared_listings = filter_mls_listings(sample_data)
+    log_mls_filter_message(f"Test result: {'✅ Success' if success else '❌ Failed'}")
+    log_mls_filter_message(f"Prepared {len(prepared_listings)} listings for save")

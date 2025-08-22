@@ -8,7 +8,7 @@ from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
 from utilities.supabase_utils import deduplicate_listings, normalize_listing_type, save_to_ecaytrade_table
 from datetime import datetime
-from duplicate_detector import process_ecaytrade_listings
+from duplicate_detector import filter_mls_listings
 from webhook_logger import WebhookLogger
 
 # Load environment variables from .env file
@@ -397,8 +397,8 @@ async def main():
             log_message(f"\n🔍 PHASE 3: Running duplicate detection and batch save...")
             total_listings = sum(len(listings) for listings in parsed_listings_by_url.values())
             
-            # Call duplicate detector
-            success, prepared_listings = process_ecaytrade_listings(parsed_listings_by_url)
+            # Call MLS listing filter
+            success, prepared_listings = filter_mls_listings(parsed_listings_by_url)
             
             if success:
                 # Save new listings to Supabase using existing function like cireba.py
