@@ -143,7 +143,7 @@ def save_to_supabase(target_url: str, results: List[Dict]) -> bool:
         
         # Insert all rows at once
         if rows_to_insert:
-            response = supabase.table('scraping_results').insert(rows_to_insert).execute()
+            response = supabase.table('cireba_listings').insert(rows_to_insert).execute()
             
             if response.data:
                 log_supabase_message(f"✅ Saved {len(response.data)} listings for {target_url}")
@@ -245,7 +245,7 @@ def save_new_mls_numbers(mls_numbers: List[str]) -> bool:
         # Check if it's an RLS policy violation
         if "row-level security policy" in error_message.lower():
             log_supabase_message(f"⚠️ RLS policy blocks MLS number saving. Consider using SUPABASE_SERVICE_ROLE_KEY or updating RLS policy.")
-            log_supabase_message(f"ℹ️ Continuing without MLS tracking - listings will still be saved to scraping_results table")
+            log_supabase_message(f"ℹ️ Continuing without MLS tracking - listings will still be saved to cireba_listings table")
             return True  # Continue execution even if MLS tracking fails
         else:
             log_supabase_message(f"Error saving MLS numbers: {e}")
@@ -254,7 +254,7 @@ def save_new_mls_numbers(mls_numbers: List[str]) -> bool:
 def mark_removed_listings(current_parsed_mls_numbers: set, existing_mls_numbers: set) -> bool:
     """
     Mark MLS listings as removed if they exist in database but not in current parsed results.
-    Updates the removed_on field in scraping_results table to current UTC timestamp.
+    Updates the removed_on field in cireba_listings table to current UTC timestamp.
     """
     try:
         # Find MLS numbers that exist in database but not in current parsed results
@@ -273,11 +273,11 @@ def mark_removed_listings(current_parsed_mls_numbers: set, existing_mls_numbers:
         # Update removed_on field for MLS numbers that are no longer available
         current_utc = datetime.utcnow().isoformat()
         
-        # Update each removed MLS number in scraping_results table
+        # Update each removed MLS number in cireba_listings table
         successful_updates = 0
         for mls_number in removed_mls_numbers:
             try:
-                response = supabase.table('scraping_results')\
+                response = supabase.table('cireba_listings')\
                     .update({'removed_on': current_utc})\
                     .eq('mls_number', mls_number)\
                     .execute()

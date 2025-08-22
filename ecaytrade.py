@@ -267,12 +267,12 @@ async def main():
     
     # Base URLs for each category
     base_urls = [
-        "https://ecaytrade.com/real-estate/for-sale?page=1&type=apartments+condos+duplexes+houses+townhouses&location=Bodden%20Town/Breakers,East%20End/High%20Rock,George%20Town,North%20Side,Red%20Bay/Prospect,Rum%20Point/Kaibo,Savannah/Newlands,Seven%20Mile%20Beach,Seven%20Mile%20Beach%20Corridor,South%20Sound,Spotts,West%20Bay&sort=date-high",
-        "https://ecaytrade.com/real-estate/for-sale?page=1&type=apartments+condos+duplexes+houses+townhouses&location=Cayman%20Brac&sort=date-high",
-        "https://ecaytrade.com/real-estate/for-sale?page=1&type=apartments+condos+duplexes+houses+townhouses&location=Little%20Cayman&sort=date-high",
-        "https://ecaytrade.com/real-estate/for-sale?page=1&type=lots--lands&location=Bodden%20Town/Breakers,East%20End/High%20Rock,George%20Town,North%20Side,Red%20Bay/Prospect,Rum%20Point/Kaibo,Savannah/Newlands,Seven%20Mile%20Beach,Seven%20Mile%20Beach%20Corridor,South%20Sound,Spotts,West%20Bay&sort=date-high",
-        "https://ecaytrade.com/real-estate/for-sale?page=1&type=lots--lands&location=Cayman%20Brac&sort=date-high",
-        "https://ecaytrade.com/real-estate/for-sale?page=1&type=lots--lands&location=Little%20Cayman&sort=date-high"
+        "https://ecaytrade.com/real-estate/for-sale?page=1&minprice=100000&type=apartments+condos+duplexes+houses+townhouses&location=Bodden%20Town/Breakers,East%20End/High%20Rock,George%20Town,North%20Side,Red%20Bay/Prospect,Rum%20Point/Kaibo,Savannah/Newlands,Seven%20Mile%20Beach,Seven%20Mile%20Beach%20Corridor,South%20Sound,Spotts,West%20Bay&sort=date-high",
+        "https://ecaytrade.com/real-estate/for-sale?page=1&minprice=100000&type=apartments+condos+duplexes+houses+townhouses&location=Cayman%20Brac&sort=date-high",
+        "https://ecaytrade.com/real-estate/for-sale?page=1&minprice=100000&type=apartments+condos+duplexes+houses+townhouses&location=Little%20Cayman&sort=date-high",
+        "https://ecaytrade.com/real-estate/for-sale?page=1&minprice=25000&type=lots--lands&location=Bodden%20Town/Breakers,East%20End/High%20Rock,George%20Town,North%20Side,Red%20Bay/Prospect,Rum%20Point/Kaibo,Savannah/Newlands,Seven%20Mile%20Beach,Seven%20Mile%20Beach%20Corridor,South%20Sound,Spotts,West%20Bay&sort=date-high",
+        "https://ecaytrade.com/real-estate/for-sale?page=1&minprice=25000&type=lots--lands&location=Cayman%20Brac&sort=date-high",
+        "https://ecaytrade.com/real-estate/for-sale?page=1&minprice=25000&type=lots--lands&location=Little%20Cayman&sort=date-high"
     ]
     
     # ===== PHASE 1: CRAWL AND SAVE RAW RESULTS =====

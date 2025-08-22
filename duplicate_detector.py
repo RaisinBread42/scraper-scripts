@@ -85,7 +85,7 @@ class DuplicateDetector:
             offset = 0
             
             while True:
-                response = self.supabase.table('scraping_results').select(
+                response = self.supabase.table('cireba_listings').select(
                     'id, name, price, currency, link, target_url'
                 ).range(offset, offset + page_size - 1).execute()
                 
