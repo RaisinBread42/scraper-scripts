@@ -8,7 +8,7 @@ from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
 from utilities.supabase_utils import deduplicate_listings, normalize_listing_type, save_to_ecaytrade_table
 from datetime import datetime
-from duplicate_detector import filter_mls_listings
+from ecaytrade_mls_filter import filter_mls_listings
 from webhook_logger import WebhookLogger
 
 # Load environment variables from .env file

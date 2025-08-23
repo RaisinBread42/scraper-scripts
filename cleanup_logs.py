@@ -32,7 +32,7 @@ def cleanup_log_files(days=3):
         "cireba-*.txt",                    # cireba.py logs
         "ecaytrade-*.txt",                 # ecaytrade.py logs  
         "supabase-*.txt",                  # supabase_utils.py logs
-        "duplicate-detector-*.txt",        # duplicate_detector.py logs
+        "mls-listing-detector-*.txt",      # ecaytrade_mls_filter.py logs
         "run-all-scrapers-*.txt",          # run_all_scrapers.py logs
     ]
     
