@@ -206,7 +206,7 @@ class MLSListingDetector:
         # Add duplicate details
         for dup in self.mls_matches_found:
             new_listing = dup['new_listing']
-            match_info = dup['duplicate_match']
+            match_info = dup['mls_match']
             
             duplicate_entry = {
                 "new_listing": {
@@ -356,8 +356,8 @@ def filter_mls_listings(parsed_listings_by_url: Dict[str, List[Dict]]) -> Tuple[
             detector.process_listing(listing, source_url)
     
     log_mls_filter_message(f"✅ Processed {total_input_listings} input listings")
-    log_mls_filter_message(f"   → {len(detector.new_listings)} new listings (>= $200k USD)")
-    log_mls_filter_message(f"   → {len(detector.duplicates_found)} duplicates detected")
+    log_mls_filter_message(f"   → {len(detector.filtered_listings)} new listings (>= $200k USD)")
+    log_mls_filter_message(f"   → {len(detector.mls_matches_found)} duplicates detected")
     
     # Phase 3: Webhook for duplicates
     webhook_success = detector.send_batch_webhook()

@@ -221,7 +221,7 @@ def parse_markdown_list(md_text, url=None, location=None):
     # Updated regex to capture location from __Location__ pattern in the markdown
     # Pattern captures: [ ![NAME](IMG) PROPERTY_TYPE (PRICE or "Price Upon Request") CONTENT __LOCATION__ ](LINK)
     pattern = re.compile(
-        r'\[ !\[(.*?)\]\(([^\)]*)\)\s*(Condos|Apartments|Houses|Townhouses|Lots & Lands)\s*(?:(CI\$|US\$)\s*([\d,]+)|Price Upon Request)(.*?)__([^_]+)__\s*\]\((https://ecaytrade\.com/advert/\d+)\)',
+        r'\[ !\[(.*?)\]\(([^\)]*)\)\s*(Condos|Apartments|Houses|Townhouses|Duplexes|Lots & Lands)\s*(?:(CI\$|US\$)\s*([\d,]+)|Price Upon Request)(.*?)__([^_]+)__\s*\]\((https://ecaytrade\.com/advert/\d+)\)',
         re.DOTALL
     )
     results = []

@@ -60,7 +60,7 @@ def cleanup_old_listings(supabase: Client, table_name: str, days_old: int = 3) -
             count='exact'
         ).lt('created_at', cutoff_iso).execute()
         
-        records_to_delete = len(count_response.data) if count_response.data else 0
+        records_to_delete = count_response.count if hasattr(count_response, 'count') else 0
         
         if records_to_delete == 0:
             log_db_cleanup_message(f"ℹ️ No old records found in {table_name}")
@@ -108,13 +108,13 @@ def cleanup_old_listings(supabase: Client, table_name: str, days_old: int = 3) -
 def get_table_stats(supabase: Client, table_name: str) -> dict:
     """Get basic statistics about a table."""
     try:
-        # Get total count
+        # Get total count using count metadata (not len of returned data)
         total_response = supabase.table(table_name).select(
             'id', 
             count='exact'
         ).execute()
         
-        total_count = len(total_response.data) if total_response.data else 0
+        total_count = total_response.count if hasattr(total_response, 'count') else 0
         
         # Get count of recent records (last 7 days)
         recent_cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
@@ -123,7 +123,7 @@ def get_table_stats(supabase: Client, table_name: str) -> dict:
             count='exact'
         ).gte('created_at', recent_cutoff).execute()
         
-        recent_count = len(recent_response.data) if recent_response.data else 0
+        recent_count = recent_response.count if hasattr(recent_response, 'count') else 0
         
         return {
             'total': total_count,
