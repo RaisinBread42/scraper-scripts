@@ -265,10 +265,10 @@ def parse_markdown_list(md_text, url=None, location=None):
         listing_type = normalize_listing_type(property_type)
         
         # Format location with base location appended
-        if specific_location:
+        if specific_location and specific_location == "Grand Cayman":
             final_location = f"{specific_location}, {base_location}"
         else:
-            final_location = base_location
+            final_location = base_location # otherwise cayman brac or little cayman shows twice.
         
         results.append({
             "name": name,
@@ -357,8 +357,8 @@ async def main():
                     css_selector="div#listing-results",
                     markdown_generator = cleaned_md_generator,
                     wait_for_images = False,
-                    scan_full_page = True,
-                    scroll_delay=1, 
+                    scan_full_page = False,
+                    scroll_delay=0.3, 
                 )
 
                 # Crawl each category and collect results in memory

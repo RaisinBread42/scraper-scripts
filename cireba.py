@@ -424,9 +424,9 @@ async def main():
                 config = CrawlerRunConfig(
                     css_selector="div#grid-view",
                     markdown_generator = cleaned_md_generator,
-                    wait_for_images = True,
-                    scan_full_page = True,
-                    scroll_delay=1, 
+                    wait_for_images = False,
+                    scan_full_page = False,
+                    scroll_delay=0.3, 
                 )
 
                 # Crawl each category and collect results in memory
