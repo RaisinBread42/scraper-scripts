@@ -27,6 +27,12 @@ def log_message(message):
     if not hasattr(log_message, 'initialized'):
         log_message.initialized = True
 
+def batch_log_messages(messages):
+    """Write multiple messages to log file in batch."""
+    with open(LOG_FILE, 'a', encoding='utf-8') as f:
+        for message in messages:
+            f.write(f"{datetime.now().strftime('%H:%M:%S')} - {message}\n")
+
 def get_category_name(url):
     """Extract category name from URL for file naming."""
     if "type=lots--lands" in url:
@@ -169,29 +175,30 @@ async def crawl_category_pages(crawler, base_url, config):
     page_number = 1
     pages_crawled = 0
     crawl_results = []
+    log_buffer = []  # Collect logs in memory
     category = get_category_name(base_url)
     location = get_location_from_url(base_url)
     
-    log_message(f"🏗️ Starting to crawl {category.upper()} category for {location}: {base_url}")
+    log_buffer.append(f"🏗️ Starting to crawl {category.upper()} category for {location}: {base_url}")
     
     while True:
         # Build URL with current page number
         current_url = base_url.replace("page=1", f"page={page_number}")
         
-        log_message(f"🌐 Crawling page {page_number} ({location}): {current_url}")
+        log_buffer.append(f"🌐 Crawling page {page_number} ({location}): {current_url}")
         
         # Crawl the current page
         result = await crawler.arun(url=current_url, config=config)
         
         if not result.success:
-            log_message(f"❌ Failed to crawl page {page_number} ({location}): {current_url}")
+            log_buffer.append(f"❌ Failed to crawl page {page_number} ({location}): {current_url}")
             break
         
         # Check if page has content by looking for listings
         parsed_listings = parse_markdown_list(result.markdown, current_url, location)
         
         if not parsed_listings or len(parsed_listings) == 0:
-            log_message(f"📭 Page {page_number} has no listings. Stopping crawl for {category} ({location}).")
+            log_buffer.append(f"📭 Page {page_number} has no listings. Stopping crawl for {category} ({location}).")
             break
         
         # Store result in memory instead of saving to file immediately
@@ -208,12 +215,16 @@ async def crawl_category_pages(crawler, base_url, config):
         crawl_results.append(crawl_data)
         
         pages_crawled += 1
-        log_message(f"✅ Successfully crawled page {page_number} ({location}) - found {len(parsed_listings)} listings")
+        log_buffer.append(f"✅ Successfully crawled page {page_number} ({location}) - found {len(parsed_listings)} listings")
         
         # Move to next page
         page_number += 1
     
-    log_message(f"🏁 {category.upper()} ({location}) crawling complete. {pages_crawled} pages crawled.")
+    log_buffer.append(f"🏁 {category.upper()} ({location}) crawling complete. {pages_crawled} pages crawled.")
+    
+    # Batch write all logs for this category
+    batch_log_messages(log_buffer)
+    
     return pages_crawled, crawl_results
 
 
