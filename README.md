@@ -14,11 +14,12 @@ This automated system collects and processes real estate listings from multiple 
 ## System Architecture
 
 ### High-Level Workflow
-The system operates through the **Master Orchestrator** (`run_all_scrapers.py`) which executes three primary phases:
+The system operates through the **Master Orchestrator** (`run_all_scrapers.py`) which executes four primary phases:
 
 1. **Data Collection Phase**: Scrapes listings from Cireba.com and EcayTrade.com
 2. **Data Processing Phase**: Filters duplicates and standardizes data formats
-3. **Maintenance Phase**: Cleans up log files and temporary data
+3. **File Maintenance Phase**: Cleans up log files and temporary data
+4. **Database Maintenance Phase**: Removes old listings to maintain optimal database performance
 
 ## Master Orchestrator: `run_all_scrapers.py`
 
@@ -35,11 +36,18 @@ The system operates through the **Master Orchestrator** (`run_all_scrapers.py`) 
    - Uses different price thresholds ($100K for properties, $25K for land)
    - Includes MLS duplicate detection and filtering. Only want to include non-MLS listings
 
-#### Phase 2: Data Maintenance (5 minutes)
+#### Phase 2: File Maintenance (5 minutes)
 3. **Log Cleanup** (5-minute timeout)
    - Removes log files older than 3 days
    - Cleans temporary crawl result directories
    - Maintains system storage efficiency
+
+#### Phase 3: Database Maintenance (10 minutes)
+4. **Database Cleanup** (10-minute timeout)
+   - Removes cireba_listings older than 3 days UTC
+   - Removes ecaytrade_listings older than 3 days UTC
+   - Maintains optimal database performance and reduces storage costs
+   - Provides detailed statistics on cleanup operations
 
 #### Key Features
 - **Job History Tracking**: Records each run in database for audit purposes
@@ -143,15 +151,37 @@ The system operates through the **Master Orchestrator** (`run_all_scrapers.py`) 
 - **Duplicate Reports**: Detailed information about filtered duplicate listings
 - **Performance Metrics**: Runtime statistics and data volumes processed
 
-### 6. System Maintenance (`cleanup_logs.py`)
+### 6. File System Maintenance (`cleanup_logs.py`)
 
-**Business Purpose**: Maintains system performance and storage efficiency through automated cleanup.
+**Business Purpose**: Maintains system performance and storage efficiency through automated file cleanup.
 
 #### Cleanup Operations
 - **Log File Management**: Removes logs older than 3 days
 - **Temporary Data Cleanup**: Clears crawl result directories after processing
 - **Storage Optimization**: Reports space freed and maintains system efficiency
 - **Selective Preservation**: Keeps recent files for troubleshooting purposes
+
+### 7. Database Maintenance (`cleanup_database.py`)
+
+**Business Purpose**: Maintains optimal database performance and controls storage costs by removing old listing data.
+
+#### Core Functionality
+- **Automated Cleanup**: Removes listings older than 3 days UTC from both tables
+- **Batch Processing**: Deletes records in batches to avoid timeouts and maintain system stability
+- **Statistics Reporting**: Provides before/after counts and deletion summaries
+- **Error Handling**: Graceful handling of database connectivity and permission issues
+
+#### Business Benefits
+- **Cost Control**: Reduces database storage costs by maintaining only recent, relevant data
+- **Performance Optimization**: Keeps query performance optimal by limiting table sizes
+- **Data Freshness**: Ensures analysis focuses on current market conditions
+- **Storage Efficiency**: Prevents unlimited database growth while maintaining operational data
+
+#### Safety Features
+- **UTC Timezone Handling**: Uses standardized UTC timestamps for reliable date comparisons
+- **Batch Deletion**: Processes deletions in controlled batches (100 records) to prevent system overload
+- **Comprehensive Logging**: Detailed logs of all deletion activities for audit purposes
+- **Statistics Tracking**: Reports total records, recent activity, and cleanup impact
 
 ---
 
@@ -206,11 +236,13 @@ SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
 - `ecaytrade-YYYY-MM-DD.txt`: EcayTrade scraper detailed logs
 - `mls-listing-detector-YYYY-MM-DD.txt`: Duplicate detection logs
 - `supabase-YYYY-MM-DD.txt`: Database operation logs
+- `database-cleanup-YYYY-MM-DD.txt`: Database maintenance logs
 
 ### Performance Metrics
 - **Cireba Processing**: Typically processes 500-1000 listings per run
 - **EcayTrade Processing**: Handles 200-500 listings with duplicate filtering
-- **Runtime**: Complete cycle typically completes in 10-15 minutes
+- **Database Cleanup**: Removes 100-500 old listings per run (varies by activity)
+- **Runtime**: Complete cycle typically completes in 10-15 minutes including database cleanup
 
 
 ---
@@ -224,9 +256,10 @@ python run_all_scrapers.py
 
 ### Individual Component Testing
 ```bash
-python cireba.py          # Test MLS scraping only
-python ecaytrade.py       # Test EcayTrade scraping only
-python cleanup_logs.py    # Test maintenance operations only
+python cireba.py            # Test MLS scraping only
+python ecaytrade.py         # Test EcayTrade scraping only
+python cleanup_logs.py      # Test file maintenance operations only
+python cleanup_database.py  # Test database maintenance operations only
 ```
 
 

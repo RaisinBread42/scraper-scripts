@@ -34,6 +34,7 @@ def cleanup_log_files(days=3):
         "supabase-*.txt",                  # supabase_utils.py logs
         "mls-listing-detector-*.txt",      # ecaytrade_mls_filter.py logs
         "run-all-scrapers-*.txt",          # run_all_scrapers.py logs
+        "database-cleanup-*.txt",          # cleanup_database.py logs
     ]
     
     total_deleted = 0
