@@ -28,7 +28,6 @@ class WebhookLogger:
                                  existing_mls_count: int = 0,
                                  category_results: Optional[List[Dict]] = None,
                                  new_mls_saved: int = 0,
-                                 removed_mls_details: Optional[List[str]] = None,
                                  error_message: Optional[str] = None) -> bool:
         """
         Send detailed webhook notification with scraping results that match supabase log format.
@@ -39,7 +38,6 @@ class WebhookLogger:
             existing_mls_count: Number of existing MLS numbers found in database
             category_results: List of dicts with category scraping results
             new_mls_saved: Number of new MLS numbers saved to tracking table
-            removed_mls_details: List of removed MLS numbers
             error_message: Error message if status is 'failure'
         
         Returns:
@@ -78,11 +76,6 @@ class WebhookLogger:
             if new_mls_saved > 0:
                 summary_lines.append(f"✅ Saved {new_mls_saved} new MLS numbers to tracking table")
             
-            if removed_mls_details:
-                for mls_number in removed_mls_details:
-                    summary_lines.append(f"🗑️ Marked MLS #{mls_number} as removed")
-                summary_lines.append(f"✅ Successfully marked {len(removed_mls_details)}/{len(removed_mls_details)} listings as removed")
-            
             payload = {
                 "script_name": script_name,
                 "status": status,
@@ -91,8 +84,6 @@ class WebhookLogger:
                 "total_new_listings": total_new_listings,
                 "total_existing_skipped": total_existing_skipped,
                 "new_mls_saved": new_mls_saved,
-                "removed_listings_count": len(removed_mls_details) if removed_mls_details else 0,
-                "removed_mls_numbers": removed_mls_details or [],
                 "category_results": category_results or [],
                 "error_message": error_message,
                 "summary_lines": summary_lines,

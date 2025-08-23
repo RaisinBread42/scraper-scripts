@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
-from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type, get_existing_mls_numbers, filter_new_listings, save_new_mls_numbers, mark_removed_listings, save_scraping_job_history
+from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type, get_existing_mls_numbers, filter_new_listings, save_new_mls_numbers, save_scraping_job_history
 from webhook_logger import WebhookLogger
 from datetime import datetime
 import json
@@ -385,7 +385,6 @@ async def main():
     existing_mls_count = 0
     category_results = []
     new_mls_saved = 0
-    removed_mls_numbers = []
     
     try:
         # Save scraping job history at the start
@@ -467,7 +466,6 @@ async def main():
         # Process each category's saved results
         all_listings = []
         all_new_mls_numbers = []
-        all_current_mls_numbers = set()
         parsing_successful = True
         
         for base_url in base_urls:
@@ -481,10 +479,6 @@ async def main():
                 log_message(f"⚠️ No listings found for {category.upper()}")
                 parsing_successful = False
                 continue
-            
-            # Collect all current MLS numbers from parsed results
-            category_mls_numbers = {listing['mls_number'] for listing in category_listings if listing.get('mls_number')}
-            all_current_mls_numbers.update(category_mls_numbers)
             
             # Filter out already scraped listings
             new_listings = filter_new_listings(category_listings, existing_mls_numbers)
@@ -516,14 +510,6 @@ async def main():
             save_new_mls_numbers(all_new_mls_numbers)
             new_mls_saved = len(all_new_mls_numbers)
         
-        # Mark removed listings only if parsing was successful for all categories
-        if parsing_successful and all_current_mls_numbers:
-            log_message("\n🔍 Checking for removed listings...")
-            removed_mls_set = existing_mls_numbers - all_current_mls_numbers
-            removed_mls_numbers = list(removed_mls_set)
-            mark_removed_listings(all_current_mls_numbers, existing_mls_numbers)
-        else:
-            log_message("⚠️ Skipping removed listings check due to parsing issues or no current MLS numbers found")
         
         log_message(f"\n🏆 SCRAPING COMPLETE! Total new listings processed: {len(all_listings)}")
         log_message(f"📁 Raw crawl data saved in: {RAW_RESULTS_DIR}")
@@ -535,8 +521,7 @@ async def main():
             status="success",
             existing_mls_count=existing_mls_count,
             category_results=category_results,
-            new_mls_saved=new_mls_saved,
-            removed_mls_details=removed_mls_numbers
+            new_mls_saved=new_mls_saved
         )
         
     except Exception as e:

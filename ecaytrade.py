@@ -501,7 +501,6 @@ async def main():
                 existing_mls_count=0,  # ecaytrade doesn't track existing MLS like cireba
                 category_results=category_results,
                 new_mls_saved=new_listings_saved,
-                removed_mls_details=[]  # ecaytrade doesn't track removed listings
             )
             log_message("📬 Webhook notification sent successfully")
         except Exception as e:

@@ -118,5 +118,5 @@ def main():
         log_message("🎉 All scrapers completed successfully!")
         sys.exit(0)
 
-if __name__ == "__main__":
+if __name__ == "__main__":we
     main()
