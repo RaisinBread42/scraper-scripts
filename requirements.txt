@@ -3,3 +3,4 @@ crawl4ai
 dotenv
 requests
 supabase
+fuzzywuzzy
