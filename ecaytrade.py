@@ -86,6 +86,37 @@ def save_crawl_result(result, url, page_number):
     log_message(f"💾 Saved raw result to {filename}")
     return filepath
 
+def batch_save_crawl_results(crawl_results_list):
+    """Batch save all crawl results to files for better performance."""
+    if not crawl_results_list:
+        return
+    
+    # Create results directory if it doesn't exist
+    if not os.path.exists(RAW_RESULTS_DIR):
+        os.makedirs(RAW_RESULTS_DIR)
+    
+    log_message(f"💾 Batch saving {len(crawl_results_list)} crawl results...")
+    
+    saved_count = 0
+    for crawl_data in crawl_results_list:
+        try:
+            category = get_category_name(crawl_data['url'])
+            location = get_location_from_url(crawl_data['url'])
+            # Create filename with location for better organization
+            location_short = location.lower().replace(" ", "_")
+            filename = f"{category}-{location_short}-page-{crawl_data['page_number']}.json"
+            filepath = os.path.join(RAW_RESULTS_DIR, filename)
+            
+            # Save to JSON file
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(crawl_data, f, ensure_ascii=False, indent=2)
+            
+            saved_count += 1
+        except Exception as e:
+            log_message(f"❌ Error saving crawl result for page {crawl_data.get('page_number', '?')}: {e}")
+    
+    log_message(f"✅ Successfully batch saved {saved_count}/{len(crawl_results_list)} crawl results")
+
 def load_crawl_result(filepath):
     """Load raw crawl result from file."""
     try:
@@ -134,9 +165,10 @@ def get_saved_crawl_files(category=None, location=None):
     return [filepath for _, filepath in files]
 
 async def crawl_category_pages(crawler, base_url, config):
-    """Crawl all pages of a category until no more listings are found."""
+    """Crawl all pages of a category and collect results in memory until no more listings are found."""
     page_number = 1
     pages_crawled = 0
+    crawl_results = []
     category = get_category_name(base_url)
     location = get_location_from_url(base_url)
     
@@ -150,9 +182,6 @@ async def crawl_category_pages(crawler, base_url, config):
         
         # Crawl the current page
         result = await crawler.arun(url=current_url, config=config)
-
-        # Save raw result to file regardless of success
-        save_crawl_result(result, current_url, page_number)
         
         if not result.success:
             log_message(f"❌ Failed to crawl page {page_number} ({location}): {current_url}")
@@ -165,6 +194,19 @@ async def crawl_category_pages(crawler, base_url, config):
             log_message(f"📭 Page {page_number} has no listings. Stopping crawl for {category} ({location}).")
             break
         
+        # Store result in memory instead of saving to file immediately
+        crawl_data = {
+            "url": current_url,
+            "page_number": page_number,
+            "category": category,
+            "timestamp": datetime.now().isoformat(),
+            "success": result.success,
+            "markdown": result.markdown,
+            "status_code": getattr(result, 'status_code', None),
+            "error": str(result.error_message) if hasattr(result, 'error_message') and result.error_message else None
+        }
+        crawl_results.append(crawl_data)
+        
         pages_crawled += 1
         log_message(f"✅ Successfully crawled page {page_number} ({location}) - found {len(parsed_listings)} listings")
         
@@ -172,7 +214,7 @@ async def crawl_category_pages(crawler, base_url, config):
         page_number += 1
     
     log_message(f"🏁 {category.upper()} ({location}) crawling complete. {pages_crawled} pages crawled.")
-    return pages_crawled
+    return pages_crawled, crawl_results
 
 
 def parse_markdown_list(md_text, url=None, location=None):
@@ -308,19 +350,27 @@ async def main():
                     scroll_delay=1, 
                 )
 
-                # Crawl each category and save raw results
+                # Crawl each category and collect results in memory
                 total_pages_crawled = 0
+                all_crawl_results = []
+                
                 for base_url in base_urls:
                     category = get_category_name(base_url)
                     location = get_location_from_url(base_url)
                     log_message(f"\n🏗️ Starting {category.upper()} category crawl for {location}")
                     
-                    pages_crawled = await crawl_category_pages(crawler, base_url, config)
+                    pages_crawled, crawl_results = await crawl_category_pages(crawler, base_url, config)
                     total_pages_crawled += pages_crawled
+                    all_crawl_results.extend(crawl_results)
                     
-                    log_message(f"✅ {category.upper()} ({location}) crawling complete: {pages_crawled} pages saved")
+                    log_message(f"✅ {category.upper()} ({location}) crawling complete: {pages_crawled} pages crawled")
                 
-                log_message(f"🎯 PHASE 1 COMPLETE: {total_pages_crawled} total pages crawled and saved")
+                log_message(f"🎯 CRAWLING COMPLETE: {total_pages_crawled} total pages crawled")
+                
+                # Batch save all crawl results to files
+                log_message("💾 BATCH SAVING: Saving all crawl results to files...")
+                batch_save_crawl_results(all_crawl_results)
+                log_message(f"🎯 PHASE 1 COMPLETE: {len(all_crawl_results)} pages saved to files")
                 
         except Exception as e:
             error_message = f"Failed during crawling phase: {e}"

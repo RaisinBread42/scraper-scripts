@@ -75,10 +75,7 @@ def main():
     log_message("🌟 Starting all scrapers run...")
     
     # Update job history once at the beginning
-    if save_scraping_job_history("running all scrapers"):
-        log_message("✅ Job history updated for 'running all scrapers'")
-    else:
-        log_message("⚠️ Failed to update job history for 'running all scrapers'")
+    save_scraping_job_history("running all scrapers")
     
     # Define scrapers to run in order
     scrapers = [

@@ -368,15 +368,13 @@ def save_scraping_job_history(source: str) -> bool:
         }
         
         # Insert into scraping_job_history table
-        response = supabase.table('scraping_job_history').insert(row_to_insert).execute()
+        supabase.table('scraping_job_history').insert(row_to_insert).execute()
         
-        if response.data:
-            log_supabase_message(f"✅ Saved scraping job history for source: {source}")
-            return True
-        else:
-            log_supabase_message(f"❌ Failed to save scraping job history for source: {source}")
-            return False
+        # If we get here without an exception, it was successful
+        log_supabase_message(f"✅ Saved scraping job history for source: {source}")
+        return True
             
     except Exception as e:
-        log_supabase_message(f"Error saving scraping job history: {e}")
+        log_supabase_message(f"❌ Error saving scraping job history for source '{source}': {e}")
+        log_supabase_message(f"❌ Exception type: {type(e).__name__}")
         return False
