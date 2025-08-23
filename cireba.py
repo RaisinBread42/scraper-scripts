@@ -27,6 +27,12 @@ def log_message(message):
     if not hasattr(log_message, 'initialized'):
         log_message.initialized = True
 
+def batch_log_messages(messages):
+    """Write multiple messages to log file in batch."""
+    with open(LOG_FILE, 'a', encoding='utf-8') as f:
+        for message in messages:
+            f.write(f"{datetime.now().strftime('%H:%M:%S')} - {message}\n")
+
 def get_category_name(url):
     """Extract category name from URL for file naming."""
     if "listingtype_14" in url:
@@ -102,7 +108,6 @@ def load_crawl_result(filepath):
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        log_message(f"📖 Loaded raw result from {os.path.basename(filepath)}")
         return data
     except Exception as e:
         log_message(f"❌ Error loading {filepath}: {e}")
@@ -149,9 +154,10 @@ async def crawl_category_pages(crawler, base_url, config):
     page_number = 1
     pages_crawled = 0
     crawl_results = []
+    log_buffer = []  # Collect logs in memory
     category = get_category_name(base_url)
     
-    log_message(f"🏗️ Starting to crawl {category.upper()} category: {base_url}")
+    log_buffer.append(f"🏗️ Starting to crawl {category.upper()} category: {base_url}")
     
     while True:
         # First page uses base URL, subsequent pages append #index
@@ -160,18 +166,18 @@ async def crawl_category_pages(crawler, base_url, config):
         else:
             current_url = f"{base_url}#{page_number}"
         
-        log_message(f"🌐 Crawling page {page_number}: {current_url}")
+        log_buffer.append(f"🌐 Crawling page {page_number}: {current_url}")
         
         # Crawl the current page
         result = await crawler.arun(url=current_url, config=config)
         
         if not result.success:
-            log_message(f"❌ Failed to crawl page {page_number}: {current_url}")
+            log_buffer.append(f"❌ Failed to crawl page {page_number}: {current_url}")
             break
         
         # Check if page has content (simple check for markdown length)
         if not result.markdown or len(result.markdown.strip()) < 100:
-            log_message(f"📭 Page {page_number} appears empty. Stopping crawl.")
+            log_buffer.append(f"📭 Page {page_number} appears empty. Stopping crawl.")
             break
         
         # Store result in memory instead of saving to file immediately
@@ -187,12 +193,16 @@ async def crawl_category_pages(crawler, base_url, config):
         crawl_results.append(crawl_data)
         
         pages_crawled += 1
-        log_message(f"✅ Successfully crawled page {page_number}")
+        log_buffer.append(f"✅ Successfully crawled page {page_number}")
         
         # Move to next page
         page_number += 1
     
-    log_message(f"🏁 {category.upper()} crawling complete. {pages_crawled} pages crawled.")
+    log_buffer.append(f"🏁 {category.upper()} crawling complete. {pages_crawled} pages crawled.")
+    
+    # Batch write all logs for this category
+    batch_log_messages(log_buffer)
+    
     return pages_crawled, crawl_results
 
 def process_saved_category_results(base_url):
@@ -208,26 +218,31 @@ def process_saved_category_results(base_url):
         return []
     
     all_category_listings = []
+    log_buffer = []  # Collect processing logs in memory
     
     for filepath in saved_files:
         # Load the saved crawl result
         crawl_data = load_crawl_result(filepath)
         
         if not crawl_data or not crawl_data.get('success'):
-            log_message(f"⚠️ Skipping failed/invalid result: {os.path.basename(filepath)}")
+            log_buffer.append(f"⚠️ Skipping failed/invalid result: {os.path.basename(filepath)}")
             continue
         
         # Parse the markdown content
         parsed_listings = parse_cireba_listings_unified(crawl_data['markdown'], crawl_data['url'])
         
         if not parsed_listings:
-            log_message(f"📭 No listings found in {os.path.basename(filepath)}")
+            log_buffer.append(f"📭 No listings found in {os.path.basename(filepath)}")
             continue
         
-        log_message(f"✅ Parsed {len(parsed_listings)} listings from {os.path.basename(filepath)}")
+        log_buffer.append(f"✅ Parsed {len(parsed_listings)} listings from {os.path.basename(filepath)}")
         all_category_listings.extend(parsed_listings)
     
-    log_message(f"🎯 Total {len(all_category_listings)} listings processed for {category}")
+    log_buffer.append(f"🎯 Total {len(all_category_listings)} listings processed for {category}")
+    
+    # Batch write all processing logs for this category
+    batch_log_messages(log_buffer)
+    
     return all_category_listings
 
 
