@@ -3,15 +3,6 @@ from supabase import create_client, Client
 from typing import List, Dict
 from datetime import datetime
 
-# Create log file with today's date
-SUPABASE_LOG_FILE = f"supabase-{datetime.now().strftime('%Y-%m-%d')}.txt"
-
-def log_supabase_message(message):
-    """Write message to supabase log file, overwriting if first message of the day."""
-    with open(SUPABASE_LOG_FILE, 'w' if not hasattr(log_supabase_message, 'initialized') else 'a', encoding='utf-8') as f:
-        f.write(f"{datetime.now().strftime('%H:%M:%S')} - {message}\n")
-    if not hasattr(log_supabase_message, 'initialized'):
-        log_supabase_message.initialized = True
 
 def normalize_listing_type(raw_type):
     """
@@ -176,17 +167,13 @@ def save_to_listings_table(target_url: str, results: List[Dict], table_name: str
             response = supabase.table(table_name).insert(rows_to_insert).execute()
             
             if response.data:
-                log_supabase_message(f"✅ Saved {len(response.data)} listings to {table_name} for {target_url}")
                 return True
             else:
-                log_supabase_message(f"❌ Failed to save results to {table_name} for {target_url}")
                 return False
         else:
-            log_supabase_message(f"⚠️ No valid results to save to {table_name} for {target_url}")
             return True
             
     except Exception as e:
-        log_supabase_message(f"Error saving to {table_name}: {e}")
         return False
 
 def save_to_supabase(target_url: str, results: List[Dict]) -> bool:
@@ -243,11 +230,9 @@ def get_existing_mls_numbers() -> set:
             # Move to next page
             start += page_size
         
-        log_supabase_message(f"✅ Found {len(all_mls_numbers)} existing MLS numbers in database (paginated)")
         return all_mls_numbers
         
     except Exception as e:
-        log_supabase_message(f"Error fetching existing MLS numbers: {e}")
         return set()
 
 def filter_new_listings(listings: List[Dict], existing_mls_numbers: set) -> List[Dict]:
@@ -262,7 +247,6 @@ def filter_new_listings(listings: List[Dict], existing_mls_numbers: set) -> List
         else:
             new_listings.append(listing)
     
-    log_supabase_message(f"✅ Filtered {len(new_listings)} new listings, skipped {skipped_count} existing ones")
     return new_listings
 
 def save_new_mls_numbers(mls_numbers: List[str]) -> bool:
@@ -281,24 +265,18 @@ def save_new_mls_numbers(mls_numbers: List[str]) -> bool:
             response = supabase.table('mls_listings').insert(rows_to_insert).execute()
             
             if response.data:
-                log_supabase_message(f"✅ Saved {len(response.data)} new MLS numbers to tracking table")
                 return True
             else:
-                log_supabase_message(f"❌ Failed to save MLS numbers to tracking table")
                 return False
         else:
-            log_supabase_message(f"⚠️ No valid MLS numbers to save")
             return True
             
     except Exception as e:
         error_message = str(e)
         # Check if it's an RLS policy violation
         if "row-level security policy" in error_message.lower():
-            log_supabase_message(f"⚠️ RLS policy blocks MLS number saving. Consider using SUPABASE_SERVICE_ROLE_KEY or updating RLS policy.")
-            log_supabase_message(f"ℹ️ Continuing without MLS tracking - listings will still be saved to cireba_listings table")
             return True  # Continue execution even if MLS tracking fails
         else:
-            log_supabase_message(f"Error saving MLS numbers: {e}")
             return False
 
 
@@ -321,10 +299,7 @@ def save_scraping_job_history(source: str) -> bool:
         supabase.table('scraping_job_history').insert(row_to_insert).execute()
         
         # If we get here without an exception, it was successful
-        log_supabase_message(f"✅ Saved scraping job history for source: {source}")
         return True
             
     except Exception as e:
-        log_supabase_message(f"❌ Error saving scraping job history for source '{source}': {e}")
-        log_supabase_message(f"❌ Exception type: {type(e).__name__}")
         return False

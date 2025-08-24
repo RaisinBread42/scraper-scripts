@@ -27,13 +27,6 @@ load_dotenv()
 # Webhook URL placeholder - will be replaced with actual URL
 WEBHOOK_URL = "https://n8n.obsidiansoftwaredev.com/webhook/13cf59c6-974b-4659-8ebb-2e171b80cbf1"
 
-# Create log file with today's date for MLS listing detector
-MLS_FILTER_LOG_FILE = f"mls-listing-detector-{datetime.now().strftime('%Y-%m-%d')}.txt"
-
-def log_mls_filter_message(message):
-    """Write message to MLS listing filter log file."""
-    with open(MLS_FILTER_LOG_FILE, 'a', encoding='utf-8') as f:
-        f.write(f"{datetime.now().strftime('%H:%M:%S')} - {message}\n")
 
 class MLSListingDetector:
     def __init__(self):
@@ -51,13 +44,11 @@ class MLSListingDetector:
             )
             return True
         except Exception as e:
-            log_mls_filter_message(f"❌ Failed to initialize Supabase: {e}")
             return False
     
     
     def load_mls_listings(self) -> bool:
         """Load all existing MLS listings from Cireba"""
-        log_mls_filter_message("🔄 Loading MLS listings from Cireba table...")
         
         if not self.initialize_supabase():
             return False
@@ -96,11 +87,9 @@ class MLSListingDetector:
                     'source': self.extract_source_from_url(listing.get('target_url', ''))
                 })
             
-            log_mls_filter_message(f"✅ Loaded {len(self.mls_listings)} MLS listings from Cireba")
             return True
             
         except Exception as e:
-            log_mls_filter_message(f"❌ Error loading existing listings: {e}")
             return False
     
     def extract_source_from_url(self, url: str) -> str:
@@ -159,7 +148,6 @@ class MLSListingDetector:
         # Skip if below threshold
         if price_usd < 200000:
             listing_name = listing.get('name', '')
-            log_mls_filter_message(f"⏭️ Skipped listing below $200k threshold: {listing_name[:30]}... (${price_usd:,.0f})")
             return
         
         # Create processed listing
@@ -188,7 +176,6 @@ class MLSListingDetector:
         if not self.mls_matches_found:
             return True
         
-        log_mls_filter_message(f"📤 Sending webhook notification for {len(self.mls_matches_found)} duplicates...")
         
         # Prepare webhook payload
         payload = {
@@ -235,24 +222,19 @@ class MLSListingDetector:
             )
             
             if response.status_code == 200:
-                log_mls_filter_message(f"✅ Webhook sent successfully")
                 return True
             else:
-                log_mls_filter_message(f"⚠️ Webhook returned status code: {response.status_code}")
                 # Don't treat webhook errors as failures that prevent saving
                 return True
                 
         except Exception as e:
-            log_mls_filter_message(f"❌ Error sending webhook: {e}")
             return False
     
     def get_new_listings_for_save(self) -> List[Dict]:
         """Return processed new listings ready for Supabase save"""
         if not self.filtered_listings:
-            log_mls_filter_message("ℹ️ No new listings to prepare for save")
             return []
         
-        log_mls_filter_message(f"📋 Preparing {len(self.filtered_listings)} new listings for save...")
         
         prepared_listings = []
         
@@ -312,20 +294,15 @@ class MLSListingDetector:
                 
             prepared_listings.append(row)
         
-        log_mls_filter_message(f"✅ Prepared {len(prepared_listings)} listings for save")
         return prepared_listings
     
     def log_final_summary(self):
         """Log final processing summary"""
         total_processed = len(self.mls_matches_found) + len(self.filtered_listings)
         
-        log_mls_filter_message("🏆 DUPLICATE DETECTION COMPLETE!")
-        log_mls_filter_message(f"📊 Total listings processed: {total_processed}")
-        log_mls_filter_message(f"🆕 New listings ready for save: {len(self.filtered_listings)}")
-        log_mls_filter_message(f"🔄 Duplicates detected: {len(self.mls_matches_found)}")
         
         if self.mls_matches_found:
-            log_mls_filter_message(f"📤 Webhook notification sent for duplicates")
+            pass
 
 def filter_mls_listings(parsed_listings_by_url: Dict[str, List[Dict]]) -> Tuple[bool, List[Dict]]:
     """
@@ -341,23 +318,17 @@ def filter_mls_listings(parsed_listings_by_url: Dict[str, List[Dict]]) -> Tuple[
     
     # Phase 1: Load MLS listings
     if not detector.load_mls_listings():
-        log_mls_filter_message("❌ Failed to load MLS listings")
         return False, []
     
     # Phase 2: Process all new listings
-    log_mls_filter_message("🔍 Processing new listings for duplicates...")
     
     total_input_listings = 0
     for source_url, listings in parsed_listings_by_url.items():
         total_input_listings += len(listings)
-        log_mls_filter_message(f"Processing {len(listings)} listings from {source_url}")
         
         for listing in listings:
             detector.process_listing(listing, source_url)
     
-    log_mls_filter_message(f"✅ Processed {total_input_listings} input listings")
-    log_mls_filter_message(f"   → {len(detector.filtered_listings)} new listings (>= $200k USD)")
-    log_mls_filter_message(f"   → {len(detector.mls_matches_found)} duplicates detected")
     
     # Phase 3: Webhook for duplicates
     webhook_success = detector.send_batch_webhook()

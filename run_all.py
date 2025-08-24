@@ -15,14 +15,6 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
 
-# Create log file with today's date
-LOG_FILE = f"run-all-scrapers-{datetime.now().strftime('%Y-%m-%d')}.txt"
-
-def log_message(message):
-    """Write message to log file."""
-    with open(LOG_FILE, 'a', encoding='utf-8') as f:
-        f.write(f"{datetime.now().strftime('%H:%M:%S')} - {message}\n")
-    print(message)
 
 def run_scraper(script_name, timeout_minutes=15):
     """
@@ -35,7 +27,6 @@ def run_scraper(script_name, timeout_minutes=15):
     Returns:
         bool: True if successful, False otherwise
     """
-    log_message(f"🚀 Starting {script_name}...")
     
     try:
         # Run the script
@@ -49,30 +40,23 @@ def run_scraper(script_name, timeout_minutes=15):
         
         # Log output
         if result.stdout:
-            log_message(f"📄 {script_name} output:")
-            log_message(result.stdout)
+            pass
         
         if result.stderr:
-            log_message(f"⚠️ {script_name} errors:")
-            log_message(result.stderr)
+            pass
         
         if result.returncode == 0:
-            log_message(f"✅ {script_name} completed successfully")
             return True
         else:
-            log_message(f"❌ {script_name} failed with return code {result.returncode}")
             return False
             
     except subprocess.TimeoutExpired:
-        log_message(f"⏰ {script_name} timed out after {timeout_minutes} minutes")
         return False
     except Exception as e:
-        log_message(f"❌ Error running {script_name}: {e}")
         return False
 
 def main():
     """Run all scrapers in sequence."""
-    log_message("🌟 Starting all scrapers run...")
     
     # Update job history once at the beginning
     save_scraping_job_history("running all scrapers")
@@ -90,7 +74,6 @@ def main():
     for script_name, timeout_minutes in scrapers:
         # Check if script exists
         if not os.path.exists(script_name):
-            log_message(f"❌ Script not found: {script_name}")
             results.append(False)
             continue
         
@@ -98,24 +81,21 @@ def main():
         results.append(success)
         
         # Add separator between scrapers
-        log_message("=" * 60)
+        pass
     
     # Summary
     successful = sum(results)
     total = len(scrapers)
     
-    log_message(f"🏆 SUMMARY: {successful}/{total} scrapers completed successfully")
     
     for i, (script_name, _) in enumerate(scrapers):
         status = "✅ SUCCESS" if results[i] else "❌ FAILED"
-        log_message(f"   {script_name}: {status}")
+        pass
     
     # Exit with non-zero code if any scraper failed
     if successful < total:
-        log_message("⚠️ Some scrapers failed. Check logs for details.")
         sys.exit(1)
     else:
-        log_message("🎉 All scrapers completed successfully!")
         sys.exit(0)
 
 if __name__ == "__main__":

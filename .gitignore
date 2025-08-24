@@ -4,9 +4,7 @@ utilities/__pycache__/supabase_utils.cpython-313.pyc
 crawl_results.md
 
 # Dynamic log files (date-based)
-cireba-*.txt
-supabase-*.txt
-migrate-mls-*.txt
+*.txt
 
 # Raw crawl results directories (date-based)
 raw_crawl_results_*

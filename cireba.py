@@ -4,7 +4,7 @@ from supabase import create_client, Client
 import json
 import os
 from dotenv import load_dotenv 
-from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, DefaultMarkdownGenerator
+from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
 from utilities.supabase_utils import save_to_supabase, deduplicate_listings, normalize_listing_type, get_existing_mls_numbers, filter_new_listings, save_new_mls_numbers, save_scraping_job_history
 from webhook_logger import WebhookLogger
@@ -14,24 +14,9 @@ import json
 # Load environment variables from .env file
 load_dotenv()  # Add this line
 
-# Create log file with today's date
-LOG_FILE = f"cireba-{datetime.now().strftime('%Y-%m-%d')}.txt"
-
 # Create directory for raw crawl results
 RAW_RESULTS_DIR = f"raw_crawl_results_{datetime.now().strftime('%Y-%m-%d')}"
 
-def log_message(message):
-    """Write message to log file, overwriting if first message of the day."""
-    with open(LOG_FILE, 'w' if not hasattr(log_message, 'initialized') else 'a', encoding='utf-8') as f:
-        f.write(f"{datetime.now().strftime('%H:%M:%S')} - {message}\n")
-    if not hasattr(log_message, 'initialized'):
-        log_message.initialized = True
-
-def batch_log_messages(messages):
-    """Write multiple messages to log file in batch."""
-    with open(LOG_FILE, 'a', encoding='utf-8') as f:
-        for message in messages:
-            f.write(f"{datetime.now().strftime('%H:%M:%S')} - {message}\n")
 
 def get_category_name(url):
     """Extract category name from URL for file naming."""
@@ -71,8 +56,6 @@ def save_crawl_result(result, url, page_number):
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(save_data, f, ensure_ascii=False, indent=2)
     
-    log_message(f"💾 Saved raw result to {filename}")
-
     return filepath
 
 def batch_save_crawl_results(crawl_results_list):
@@ -83,8 +66,6 @@ def batch_save_crawl_results(crawl_results_list):
     # Create results directory if it doesn't exist
     if not os.path.exists(RAW_RESULTS_DIR):
         os.makedirs(RAW_RESULTS_DIR)
-    
-    log_message(f"💾 Batch saving {len(crawl_results_list)} crawl results...")
     
     saved_count = 0
     for crawl_data in crawl_results_list:
@@ -99,9 +80,7 @@ def batch_save_crawl_results(crawl_results_list):
             
             saved_count += 1
         except Exception as e:
-            log_message(f"❌ Error saving crawl result for page {crawl_data.get('page_number', '?')}: {e}")
-    
-    log_message(f"✅ Successfully batch saved {saved_count}/{len(crawl_results_list)} crawl results")
+            pass
 
 def load_crawl_result(filepath):
     """Load raw crawl result from file."""
@@ -110,7 +89,6 @@ def load_crawl_result(filepath):
             data = json.load(f)
         return data
     except Exception as e:
-        log_message(f"❌ Error loading {filepath}: {e}")
         return None
 
 def get_saved_crawl_files(category):
@@ -154,10 +132,7 @@ async def crawl_category_pages(crawler, base_url, config):
     page_number = 1
     pages_crawled = 0
     crawl_results = []
-    log_buffer = []  # Collect logs in memory
     category = get_category_name(base_url)
-    
-    log_buffer.append(f"🏗️ Starting to crawl {category.upper()} category: {base_url}")
     
     while True:
         # First page uses base URL, subsequent pages append #index
@@ -166,20 +141,16 @@ async def crawl_category_pages(crawler, base_url, config):
         else:
             current_url = f"{base_url}#{page_number}"
         
-        log_buffer.append(f"🌐 Crawling page {page_number}: {current_url}")
-        
         # Crawl the current page
         result = await crawler.arun(url=current_url, config=config)
         
         if not result.success:
-            log_buffer.append(f"❌ Failed to crawl page {page_number}: {current_url}")
             break
         
         # Check if page has content (simple check for markdown length)
         if not result.markdown or len(result.markdown.strip()) < 100:
-            log_buffer.append(f"📭 Page {page_number} appears empty. Stopping crawl.")
             break
-        
+
         # Store result in memory instead of saving to file immediately
         crawl_data = {
             "url": current_url,
@@ -190,18 +161,13 @@ async def crawl_category_pages(crawler, base_url, config):
             "status_code": getattr(result, 'status_code', None),
             "error": str(result.error_message) if hasattr(result, 'error_message') and result.error_message else None
         }
+        
         crawl_results.append(crawl_data)
         
         pages_crawled += 1
-        log_buffer.append(f"✅ Successfully crawled page {page_number}")
         
         # Move to next page
         page_number += 1
-    
-    log_buffer.append(f"🏁 {category.upper()} crawling complete. {pages_crawled} pages crawled.")
-    
-    # Batch write all logs for this category
-    batch_log_messages(log_buffer)
     
     return pages_crawled, crawl_results
 
@@ -214,34 +180,24 @@ def process_saved_category_results(base_url):
     saved_files = get_saved_crawl_files(category)
     
     if not saved_files:
-        log_message(f"⚠️ No saved files found for category: {category}")
         return []
     
     all_category_listings = []
-    log_buffer = []  # Collect processing logs in memory
     
     for filepath in saved_files:
         # Load the saved crawl result
         crawl_data = load_crawl_result(filepath)
         
         if not crawl_data or not crawl_data.get('success'):
-            log_buffer.append(f"⚠️ Skipping failed/invalid result: {os.path.basename(filepath)}")
             continue
         
         # Parse the markdown content
         parsed_listings = parse_cireba_listings_unified(crawl_data['markdown'], crawl_data['url'])
         
         if not parsed_listings:
-            log_buffer.append(f"📭 No listings found in {os.path.basename(filepath)}")
             continue
         
-        log_buffer.append(f"✅ Parsed {len(parsed_listings)} listings from {os.path.basename(filepath)}")
         all_category_listings.extend(parsed_listings)
-    
-    log_buffer.append(f"🎯 Total {len(all_category_listings)} listings processed for {category}")
-    
-    # Batch write all processing logs for this category
-    batch_log_messages(log_buffer)
     
     return all_category_listings
 
@@ -366,7 +322,6 @@ def determine_property_type(url, name, link):
 
 def trigger_failed_webhook_notification(e, webhook_logger):
         error_message = str(e)
-        log_message(f"❌ SCRAPING FAILED: {error_message}")
         
         # Send failure notification
         webhook_logger.send_detailed_notification(
@@ -376,8 +331,6 @@ def trigger_failed_webhook_notification(e, webhook_logger):
         )
 
 async def main():
-    log_message("🚀 Starting CIREBA scraper with file-based crawling...")
-    
     # Initialize webhook logger
     webhook_logger = WebhookLogger()
     
@@ -385,15 +338,7 @@ async def main():
     existing_mls_count = 0
     category_results = []
     new_mls_saved = 0
-    
-    try:
-        # Save scraping job history at the start
-        log_message("📝 Saving scraping job history...")
-        save_scraping_job_history("automated python script")
-    except Exception as e:
-        log_message(f"❌ Failed to save scraping job history: {e}")
-        return  # Stop execution immediately
-    
+
     # Base URLs for each property category
     base_urls = [
         "https://www.cireba.com/cayman-residential-property-for-sale/listingtype_14/filterby_N",  # Condos
@@ -407,12 +352,10 @@ async def main():
     skip_crawling = os.path.exists(RAW_RESULTS_DIR) and os.listdir(RAW_RESULTS_DIR)
     
     if skip_crawling:
-        log_message(f"📁 Found existing crawl data in {RAW_RESULTS_DIR}")
-        log_message("⏭️ Skipping crawling phase - using existing files")
-        log_message("💡 Delete the folder to force re-crawling")
+        pass
     else:
         try:
-            log_message("📡 PHASE 1: Crawling pages and saving raw results...")
+            pass
             
             # Create an instance of AsyncWebCrawler
             async with AsyncWebCrawler() as crawler:
@@ -424,9 +367,10 @@ async def main():
                 config = CrawlerRunConfig(
                     css_selector="div#grid-view",
                     markdown_generator = cleaned_md_generator,
+                    cache_mode=CacheMode.BYPASS,
                     wait_for_images = False,
-                    scan_full_page = False,
-                    scroll_delay=0.3, 
+                    scan_full_page = True, # required! cireba behavior loads first page then paginates, so first page will reutrn always if False.
+                    scroll_delay=0.3               
                 )
 
                 # Crawl each category and collect results in memory
@@ -435,20 +379,13 @@ async def main():
                 
                 for base_url in base_urls:
                     category = get_category_name(base_url)
-                    log_message(f"\n🏗️ Crawling {category.upper()} category: {base_url}")
                     
                     pages_crawled, crawl_results = await crawl_category_pages(crawler, base_url, config)
                     total_pages_crawled += pages_crawled
                     all_crawl_results.extend(crawl_results)
-                    
-                    log_message(f"✅ {category.upper()} crawling complete: {pages_crawled} pages crawled")
-                
-                log_message(f"🎯 CRAWLING COMPLETE: {total_pages_crawled} total pages crawled")
                 
                 # Batch save all crawl results to files
-                log_message("💾 BATCH SAVING: Saving all crawl results to files...")
                 batch_save_crawl_results(all_crawl_results)
-                log_message(f"🎯 PHASE 1 COMPLETE: {len(all_crawl_results)} pages saved to files")
                 
         except Exception as e:
             trigger_failed_webhook_notification(e, webhook_logger)
@@ -456,10 +393,7 @@ async def main():
     
     # ===== PHASE 2: PROCESS SAVED RESULTS =====
     try:
-        log_message("\n🔧 PHASE 2: Processing saved results and saving to database...")
-        
         # Get existing MLS numbers from database
-        log_message("🔍 Checking for existing MLS numbers...")
         existing_mls_numbers = get_existing_mls_numbers()
         existing_mls_count = len(existing_mls_numbers)
         
@@ -470,13 +404,11 @@ async def main():
         
         for base_url in base_urls:
             category = get_category_name(base_url)
-            log_message(f"\n📋 Processing saved {category.upper()} results...")
             
             # Parse listings from saved files
             category_listings = process_saved_category_results(base_url)
             
             if not category_listings:
-                log_message(f"⚠️ No listings found for {category.upper()}")
                 parsing_successful = False
                 continue
             
@@ -501,19 +433,11 @@ async def main():
                 
                 # Save new listings to Supabase
                 save_to_supabase(base_url, deduplicate_listings(new_listings))
-                log_message(f"✅ {category.upper()} processing complete: {len(new_listings)} new listings saved")
-            else:
-                log_message(f"ℹ️ {category.upper()}: No new listings to save (all already exist)")
         
         # Save new MLS numbers to tracking table
         if all_new_mls_numbers:
             save_new_mls_numbers(all_new_mls_numbers)
             new_mls_saved = len(all_new_mls_numbers)
-        
-        
-        log_message(f"\n🏆 SCRAPING COMPLETE! Total new listings processed: {len(all_listings)}")
-        log_message(f"📁 Raw crawl data saved in: {RAW_RESULTS_DIR}")
-        log_message("💡 You can now re-run parsing by running this script again (it will skip crawling if files exist)")
         
         # Send success notification with detailed data
         webhook_logger.send_detailed_notification(
