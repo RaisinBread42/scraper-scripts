@@ -101,6 +101,7 @@ Removes listings older than 3 days from both tables to control database size and
 ```
 SUPABASE_URL=<your-supabase-url>
 SUPABASE_SERVICE_ROLE_KEY=<your-service-key>
+N8N_WEBHOOK_URL=<your-n8n-webhook-url>
 ```
 
 ### Requirements
