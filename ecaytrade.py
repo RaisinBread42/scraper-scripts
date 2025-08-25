@@ -2,22 +2,65 @@ import re
 import asyncio
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig, DefaultMarkdownGenerator
-from utilities.supabase_utils import deduplicate_listings, normalize_listing_type, save_to_ecaytrade_table
+from typing import List, Dict
+from utilities.supabase_utils import save_to_ecaytrade_table
 from datetime import datetime
 from ecaytrade_mls_filter import filter_mls_listings
+from webhook_logger import WebhookLogger
 
 # Load environment variables from .env file
 load_dotenv()  # Add this line
 
-def convert_ci_to_usd(price, currency):
-    """Convert CI$ to USD using exact rate: 1 CI$ = 1.2195121951219512195121951219512 USD"""
-    if currency == "CI$" and price:
-        try:
-            usd_amount = price * 1.2195121951219512195121951219512
-            return "US$", str(round(usd_amount, 2))
-        except ValueError:
-            return currency, price
-    return currency, price
+def clean_and_validate_listings(listings: List[Dict]) -> List[Dict]:
+    """Clean and validate all listing data including currency conversion."""
+    cleaned_listings = []
+    
+    for listing in listings:
+        # Currency conversion
+        currency = listing.get('currency', 'CI$')
+        price = listing.get('price', 0)
+        
+        if currency == "CI$" and price:
+            try:
+                usd_amount = price * 1.2195121951219512195121951219512
+                listing['currency'] = "US$"
+                listing['price'] = round(usd_amount, 2)
+            except (ValueError, TypeError):
+                listing['price'] = 0.0
+        else:
+            try:
+                listing['price'] = float(price) if price else 0.0
+            except (ValueError, TypeError):
+                listing['price'] = 0.0
+        
+        # Data type validation
+        if listing.get('sqft'):
+            try:
+                listing['sqft'] = int(str(listing['sqft']).replace(',', ''))
+            except (ValueError, TypeError):
+                listing['sqft'] = None
+        
+        if listing.get('beds'):
+            try:
+                listing['beds'] = int(float(listing['beds']))
+            except (ValueError, TypeError):
+                listing['beds'] = None
+        
+        if listing.get('baths'):
+            try:
+                listing['baths'] = int(float(listing['baths']))
+            except (ValueError, TypeError):
+                listing['baths'] = None
+        
+        if listing.get('acres'):
+            try:
+                listing['acres'] = float(listing['acres'])
+            except (ValueError, TypeError):
+                listing['acres'] = None
+        
+        cleaned_listings.append(listing)
+    
+    return cleaned_listings
 
 def get_location_from_url(url):
     """Extract location from URL based on location parameter."""
@@ -30,44 +73,29 @@ def get_location_from_url(url):
 
 
 async def crawl_category_pages(crawler, base_url, config):
-    """Crawl all pages of a category and collect results in memory until no more listings are found."""
+    """Crawl all pages of a category and collect parsed listings until no more listings are found."""
     page_number = 1
-    pages_crawled = 0
-    crawl_results = []
+    all_listings = []
     
-    while True:
-        # Build URL with current page number
+    while page_number <=1:
         current_url = base_url.replace("page=1", f"page={page_number}")
         
-        # Crawl the current page
         result = await crawler.arun(url=current_url, config=config)
 
         if not result.success:
             error_message = str(result.error_message) if hasattr(result, 'error_message') and result.error_message else f"Failed to crawl {current_url}"
             raise Exception(f"Crawling failed on page {page_number}: {error_message}")
         
-        # Check if page has content (simple check for markdown length)
         if not result.markdown or len(result.markdown.strip()) < 100:
             break
         
-        # Store result in memory instead of saving to file immediately
-        crawl_data = {
-            "url": current_url,
-            "page_number": page_number,
-            "timestamp": datetime.now().isoformat(),
-            "success": result.success,
-            "markdown": result.markdown,
-            "status_code": getattr(result, 'status_code', None),
-            "error": str(result.error_message) if hasattr(result, 'error_message') and result.error_message else None
-        }
-        crawl_results.append(crawl_data)
+        parsed_listings = parse_markdown_list(result.markdown, current_url)
+        if parsed_listings:
+            all_listings.extend(parsed_listings)
         
-        pages_crawled += 1
-        
-        # Move to next page
         page_number += 1
     
-    return pages_crawled, crawl_results
+    return all_listings
 
 def parse_markdown_list(md_text, url=None):
     # Updated regex to capture location from __Location__ pattern in the markdown
@@ -96,147 +124,101 @@ def parse_markdown_list(md_text, url=None):
         else:
             final_location = base_location # otherwise cayman brac or little cayman shows twice.
         
-        results.append(clean_listing_data({
+        results.append({
             "name": name,
             "currency": currency,
             "price": price,
             "link": link,
             "listing_type": property_type,
             "image_link": image_link,
-            "location": final_location,  # Store formatted location with base appended
-            "base_location": base_location,  # Store the URL-derived location as well
-        }))
+            "location": final_location,
+            "base_location": base_location,
+        })
     
     return results
 
-def clean_listing_data(listing):
-    """Clean and convert listing data types"""
-
-    sqft = None
-    if listing.get('sqft'):
-        try:
-            sqft = int(listing['sqft'].replace(',', '')) if isinstance(listing['sqft'], str) else int(listing['sqft'])
-        except (ValueError, TypeError):
-            sqft = None
-    
-    beds = None
-    if listing.get('beds'):
-        try:
-            beds = int(float(listing['beds'])) if isinstance(listing['beds'], str) else int(listing['beds'])
-        except (ValueError, TypeError):
-            beds = None
-    
-    baths = None
-    if listing.get('baths'):
-        try:
-            baths = int(float(listing['baths'])) if isinstance(listing['baths'], str) else int(listing['baths'])
-        except (ValueError, TypeError):
-            baths = None
-    
-    price = None
-    if listing.get('price'):
-        try:
-            price = float(listing['price'].replace(',', '')) if isinstance(listing['price'], str) else float(listing['price'])
-        except (ValueError, TypeError):
-            price = 0.0
-    
-    acres = None
-    if listing.get('acres'):
-        try:
-            acres = float(listing['acres']) if isinstance(listing['acres'], str) else float(listing['acres'])
-        except (ValueError, TypeError):
-            acres = None
-    
-    # convert currency to US
-    converted_currency, converted_price = convert_ci_to_usd(price, listing.get('currency', 'CI$'))
-    
-    listing['currency'] = converted_currency
-    listing['price'] = converted_price
-
-    # Normalize listing type
-    listing_type = normalize_listing_type(listing.get('listing_type', ''))
-    
-    # Update the listing with clean data
-    cleaned_listing = listing.copy()
-    cleaned_listing.update({
-        'sqft': sqft,
-        'beds': beds,
-        'baths': baths,
-        'price': price,
-        'acres': acres,
-        'listing_type': listing_type
-    })
-    
-    return cleaned_listing
+def trigger_failed_webhook_notification(e, webhook_logger):
+        error_message = str(e)
+        
+        # Send failure notification
+        webhook_logger.send_detailed_notification(
+            script_name="ecaytrade.py",
+            status="failure",
+            error_message=error_message
+        )
 
 async def main():
-    
-    # Base URLs for each category
+    webhook_logger = WebhookLogger()
+
     base_urls = [
         "https://ecaytrade.com/real-estate/for-sale?page=1&minprice=100000&type=apartments+condos+duplexes+houses+townhouses&location=Bodden%20Town/Breakers,East%20End/High%20Rock,George%20Town,North%20Side,Red%20Bay/Prospect,Rum%20Point/Kaibo,Savannah/Newlands,Seven%20Mile%20Beach,Seven%20Mile%20Beach%20Corridor,South%20Sound,Spotts,West%20Bay&sort=date-high",
-        "https://ecaytrade.com/real-estate/for-sale?page=1&minprice=100000&type=apartments+condos+duplexes+houses+townhouses&location=Cayman%20Brac&sort=date-high",
-        "https://ecaytrade.com/real-estate/for-sale?page=1&minprice=100000&type=apartments+condos+duplexes+houses+townhouses&location=Little%20Cayman&sort=date-high",
-        "https://ecaytrade.com/real-estate/for-sale?page=1&minprice=25000&type=lots--lands&location=Bodden%20Town/Breakers,East%20End/High%20Rock,George%20Town,North%20Side,Red%20Bay/Prospect,Rum%20Point/Kaibo,Savannah/Newlands,Seven%20Mile%20Beach,Seven%20Mile%20Beach%20Corridor,South%20Sound,Spotts,West%20Bay&sort=date-high",
-        "https://ecaytrade.com/real-estate/for-sale?page=1&minprice=25000&type=lots--lands&location=Cayman%20Brac&sort=date-high",
-        "https://ecaytrade.com/real-estate/for-sale?page=1&minprice=25000&type=lots--lands&location=Little%20Cayman&sort=date-high"
+        #"https://ecaytrade.com/real-estate/for-sale?page=1&minprice=100000&type=apartments+condos+duplexes+houses+townhouses&location=Cayman%20Brac&sort=date-high",
+        #"https://ecaytrade.com/real-estate/for-sale?page=1&minprice=100000&type=apartments+condos+duplexes+houses+townhouses&location=Little%20Cayman&sort=date-high",
+        #"https://ecaytrade.com/real-estate/for-sale?page=1&minprice=25000&type=lots--lands&location=Bodden%20Town/Breakers,East%20End/High%20Rock,George%20Town,North%20Side,Red%20Bay/Prospect,Rum%20Point/Kaibo,Savannah/Newlands,Seven%20Mile%20Beach,Seven%20Mile%20Beach%20Corridor,South%20Sound,Spotts,West%20Bay&sort=date-high",
+        #"https://ecaytrade.com/real-estate/for-sale?page=1&minprice=25000&type=lots--lands&location=Cayman%20Brac&sort=date-high",
+        #"https://ecaytrade.com/real-estate/for-sale?page=1&minprice=25000&type=lots--lands&location=Little%20Cayman&sort=date-high"
     ]
     
-    # ===== PHASE 1: CRAWL RESULTS =====
+    # ===== PHASE 1: FETCHING CRAWLED DATA =====
+    all_listings = []
     try:
-            # Create an instance of AsyncWebCrawler
-            async with AsyncWebCrawler() as crawler:
-                cleaned_md_generator = DefaultMarkdownGenerator(
-                    content_source="raw_html",  # This is the default
-                )
+        async with AsyncWebCrawler() as crawler:
+            cleaned_md_generator = DefaultMarkdownGenerator(content_source="raw_html")
 
-                config = CrawlerRunConfig(
-                    css_selector="div#listing-results",
-                    markdown_generator = cleaned_md_generator,
-                    cache_mode=CacheMode.BYPASS,
-                    wait_for_images = False,
-                    scan_full_page = True, # required for ecaytrade
-                    scroll_delay=0.3
-                )
-
-                # Crawl each category and collect results in memory
-                total_pages_crawled = 0
-                all_crawl_results = []
-                
-                for base_url in base_urls:
-                    pages_crawled, crawl_results = await crawl_category_pages(crawler, base_url, config)
-                    total_pages_crawled += pages_crawled
-                    all_crawl_results.extend(crawl_results)
+            config = CrawlerRunConfig(
+                css_selector="div#listing-results",
+                markdown_generator=cleaned_md_generator,
+                cache_mode=CacheMode.BYPASS,
+                wait_for_images=False,
+                scan_full_page=True,
+                scroll_delay=0.3
+            )
+            
+            for base_url in base_urls:
+                category_listings = await crawl_category_pages(crawler, base_url, config)
+                all_listings.extend(category_listings)
                     
     except Exception as e:
-        print(f"Failed during crawling phase: {e}")
-        return  # Stop execution
+        print(f"Failed during fetching crawled data: {e}")
+        trigger_failed_webhook_notification(e, webhook_logger)
+        return
     
-    # ===== PHASE 2: PROCESS ALL CRAWL RESULTS =====
+    # ===== PHASE 2: PARSING =====
+    parsed_listings = []
     try:
-        # Parse all listings from crawl results
-        all_listings = []
-        
-        for crawl_data in all_crawl_results:
-            all_listings.append = parse_markdown_list(crawl_data['markdown'], crawl_data.get('url'))
-        
-        if all_listings:
-            # Group by URL for MLS filtering
-            parsed_listings_by_url = {}
-            first_url = all_crawl_results[0]['url'] if all_crawl_results else ""
-            parsed_listings_by_url[first_url] = all_listings
-            
-            # Call MLS listing filter
-            success, prepared_listings = filter_mls_listings(all_listings)
-            
-            if success and prepared_listings:
-                # Save to ecaytrade_listings table
-                save_to_ecaytrade_table(first_url, prepared_listings)
-                
-        # TODO: Import and call stats/webhook module here
+        parsed_listings = clean_and_validate_listings(all_listings)
         
     except Exception as e:
-        print(f"Failed during processing phase: {e}")
-        return  # Stop execution
+        print(f"Failed during parsing: {e}")
+        trigger_failed_webhook_notification(e, webhook_logger)
+        return
+    
+    # ===== PHASE 3: REMOVING MLS LISTINGS =====
+    filtered_listings = []
+    try:
+        if parsed_listings:
+            success, filtered_listings = filter_mls_listings(parsed_listings)
+            if not success:
+                raise Exception("MLS filtering failed")
+                
+    except Exception as e:
+        print(f"Failed during removing mls listings: {e}")
+        return
+    
+    # ===== PHASE 4: SAVING TO SUPABASE =====
+    try:
+        if filtered_listings:
+            save_to_ecaytrade_table(filtered_listings)
+                
+            webhook_logger.send_detailed_notification(
+            script_name="ecaytrade.py",
+            status="success",
+            category_results=filtered_listings
+        )
+    except Exception as e:
+        print(f"Failed during saving to supabase: {e}")
+        trigger_failed_webhook_notification(e, webhook_logger)
+        return
 
 # Run the async main function
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ import os
 from supabase import create_client, Client
 from typing import List, Dict
 from datetime import datetime
-
+from webhook_logger import WebhookLogger
 
 def normalize_listing_type(raw_type):
     """
@@ -67,76 +67,29 @@ def deduplicate_listings(listings):
 def prepare_listing_row(result: Dict, target_url: str, include_mls: bool = True) -> Dict:
     """
     Prepare a single listing result for database insertion.
-    
-    Args:
-        result: Dictionary with scraped listing data
-        target_url: The URL that was scraped
-        include_mls: Whether to include mls_number field (True for cireba, False for ecaytrade)
-        
-    Returns:
-        dict: Prepared row data for database insertion
+    Assumes data is already cleaned and validated.
     """
-    # Convert string values to appropriate types
-    sqft = None
-    if result.get('sqft'):
-        try:
-            sqft = int(result['sqft'].replace(',', '')) if isinstance(result['sqft'], str) else int(result['sqft'])
-        except (ValueError, TypeError):
-            sqft = None
-    
-    beds = None
-    if result.get('beds'):
-        try:
-            beds = int(float(result['beds'])) if isinstance(result['beds'], str) else int(result['beds'])
-        except (ValueError, TypeError):
-            beds = None
-    
-    baths = None
-    if result.get('baths'):
-        try:
-            baths = int(float(result['baths'])) if isinstance(result['baths'], str) else int(result['baths'])
-        except (ValueError, TypeError):
-            baths = None
-    
-    price = None
-    if result.get('price'):
-        try:
-            price = float(result['price'].replace(',', '')) if isinstance(result['price'], str) else float(result['price'])
-        except (ValueError, TypeError):
-            price = None
-    
-    acres = None
-    if result.get('acres'):
-        try:
-            acres = float(result['acres']) if isinstance(result['acres'], str) else float(result['acres'])
-        except (ValueError, TypeError):
-            acres = None
-    
     row = {
         "target_url": target_url,
         "name": result.get('name'),
-        "sqft": sqft,
-        "beds": beds,
-        "baths": baths,
+        "sqft": result.get('sqft'),
+        "beds": result.get('beds'),
+        "baths": result.get('baths'),
         "location": result.get('location'),
         "currency": result.get('currency'),
-        "price": price,
+        "price": result.get('price'),
         "link": result.get('link'),
         "image_link": result.get('image_link'),
-        "type": normalize_listing_type(result.get('listing_type'))
+        "type": normalize_listing_type(result.get('listing_type')),
+        "acres": result.get('acres')
     }
-    
-    # Add mls_number field only for tables that have it (cireba)
+
     if include_mls:
-        row["mls_number"] = result.get('mls_number')
-    
-    # Add acres field if it exists (for land listings)
-    if acres is not None:
-        row["acres"] = acres
-        
+        row["mls_number"]: result.get('mls_number')
+
     return row
 
-def save_to_listings_table(target_url: str, results: List[Dict], table_name: str, include_mls: bool = True) -> bool:
+def save_to_listings_table(results: List[Dict], table_name: str, include_mls: bool = True) -> bool:
     """
     Save parsed results to specified listings table.
     
@@ -150,6 +103,8 @@ def save_to_listings_table(target_url: str, results: List[Dict], table_name: str
         bool: True if successful, False otherwise
     """
     try:
+        webhook_logger = WebhookLogger()
+
         # Initialize Supabase client with service role key
         supabase: Client = create_client(
             os.environ.get("SUPABASE_URL"), 
@@ -159,9 +114,9 @@ def save_to_listings_table(target_url: str, results: List[Dict], table_name: str
         # Prepare data for insertion - each result becomes a separate row
         rows_to_insert = []
         for result in results:
-            row = prepare_listing_row(result, target_url, include_mls)
+            row = prepare_listing_row(result, result.get('link',''), include_mls)
             rows_to_insert.append(row)
-        
+
         # Insert all rows at once
         if rows_to_insert:
             response = supabase.table(table_name).insert(rows_to_insert).execute()
@@ -174,16 +129,24 @@ def save_to_listings_table(target_url: str, results: List[Dict], table_name: str
             return True
             
     except Exception as e:
+        error_message = str(e)
+        
+        # Send failure notification
+        webhook_logger.send_detailed_notification(
+            script_name="supabase_utils.py",
+            status="failure",
+            error_message=error_message
+        )
         return False
 
-def save_to_supabase(target_url: str, results: List[Dict]) -> bool:
+def save_to_supabase(results: List[Dict]) -> bool:
     """
     Save scraping results to Supabase cireba_listings table.
     Legacy function for backward compatibility.
     """
-    return save_to_listings_table(target_url, results, 'cireba_listings')
+    return save_to_listings_table(results, 'cireba_listings')
 
-def save_to_ecaytrade_table(target_url: str, results: List[Dict]) -> bool:
+def save_to_ecaytrade_table(results: List[Dict]) -> bool:
     """
     Save parsed results to Supabase ecaytrade_listings table.
     
@@ -194,91 +157,7 @@ def save_to_ecaytrade_table(target_url: str, results: List[Dict]) -> bool:
     Returns:
         bool: True if successful, False otherwise
     """
-    return save_to_listings_table(target_url, results, 'ecaytrade_listings', include_mls=False)
-
-def get_existing_mls_numbers() -> set:
-    """Fetch all existing MLS numbers from mls_listings table using pagination."""
-    try:
-        # Initialize Supabase client with service role key
-        supabase: Client = create_client(
-            os.environ.get("SUPABASE_URL"), 
-            os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-        )
-        
-        # Collect all MLS numbers using pagination
-        all_mls_numbers = set()
-        page_size = 1000
-        start = 0
-        
-        while True:
-            # Query MLS numbers with pagination using range
-            end = start + page_size - 1
-            response = supabase.table('mls_listings').select('number').range(start, end).execute()
-            
-            if not response.data:
-                # No more data, break the loop
-                break
-            
-            # Add MLS numbers from current page to the set
-            page_mls_numbers = {row['number'] for row in response.data if row['number']}
-            all_mls_numbers.update(page_mls_numbers)
-            
-            # If we got less than page_size records, we've reached the end
-            if len(response.data) < page_size:
-                break
-            
-            # Move to next page
-            start += page_size
-        
-        return all_mls_numbers
-        
-    except Exception as e:
-        return set()
-
-def filter_new_listings(listings: List[Dict], existing_mls_numbers: set) -> List[Dict]:
-    """Filter out listings that already exist in mls_listings table."""
-    new_listings = []
-    skipped_count = 0
-    
-    for listing in listings:
-        mls_number = listing.get('mls_number')
-        if mls_number and mls_number in existing_mls_numbers:
-            skipped_count += 1
-        else:
-            new_listings.append(listing)
-    
-    return new_listings
-
-def save_new_mls_numbers(mls_numbers: List[str]) -> bool:
-    """Save new MLS numbers to mls_listings table."""
-    try:
-        # Initialize Supabase client with service role key
-        supabase: Client = create_client(
-            os.environ.get("SUPABASE_URL"), 
-            os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-        )
-        
-        # Prepare data for insertion
-        rows_to_insert = [{"number": mls_num} for mls_num in mls_numbers if mls_num]
-        
-        if rows_to_insert:
-            response = supabase.table('mls_listings').insert(rows_to_insert).execute()
-            
-            if response.data:
-                return True
-            else:
-                return False
-        else:
-            return True
-            
-    except Exception as e:
-        error_message = str(e)
-        # Check if it's an RLS policy violation
-        if "row-level security policy" in error_message.lower():
-            return True  # Continue execution even if MLS tracking fails
-        else:
-            return False
-
+    return save_to_listings_table(results, 'ecaytrade_listings', include_mls=False)
 
 def save_scraping_job_history(source: str) -> bool:
     """Save scraping job completion to scraping_job_history table."""

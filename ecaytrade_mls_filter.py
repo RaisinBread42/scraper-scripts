@@ -84,7 +84,7 @@ class MLSListingDetector:
         else:
             return 'unknown'
     
-    def exact_price_match(self, price1_usd: float, price2_usd: float, tolerance: float = 100.0) -> bool:
+    def exact_price_match(self, price1_usd: float, price2_usd: float, tolerance: float = 50.0) -> bool:
         """Check if two USD prices match within tolerance"""
         return abs(price1_usd - price2_usd) <= tolerance
     
@@ -130,12 +130,12 @@ class MLSListingDetector:
             # Add to filtered listings (not in MLS)
             self.filtered_listings.append(listing)
     
-def filter_mls_listings(parsed_listings_by_url: Dict[str, List[Dict]]) -> Tuple[bool, List[Dict]]:
+def filter_mls_listings(parsed_listings: List[Dict]) -> Tuple[bool, List[Dict]]:
     """
     Main function to filter EcayTrade listings against existing MLS listings
     
     Args:
-        parsed_listings_by_url: Dict mapping source URLs to lists of parsed listings
+        parsed_listings: List of parsed listings to filter
         
     Returns:
         Tuple[bool, List[Dict]]: (success, prepared_listings_for_save)
@@ -147,9 +147,8 @@ def filter_mls_listings(parsed_listings_by_url: Dict[str, List[Dict]]) -> Tuple[
         return False, []
     
     # Phase 2: Process all new listings
-    for source_url, listings in parsed_listings_by_url.items():
-        for listing in listings:
-            detector.process_listing(listing, source_url)
+    for listing in parsed_listings:
+        detector.process_listing(listing)
     
     # Phase 3: Prepare filtered listings for save
     prepared_listings = detector.filtered_listings

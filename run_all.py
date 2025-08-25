@@ -65,7 +65,6 @@ def main():
     scrapers = [
         ("cireba.py", 20),      # script, timeout_minutes
         ("ecaytrade.py", 15),
-        ("cleanup_logs.py", 5),
         ("cleanup_database.py", 10),
     ]
     
