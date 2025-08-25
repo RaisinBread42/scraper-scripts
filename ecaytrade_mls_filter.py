@@ -144,7 +144,7 @@ class MLSListingDetector:
         # Check for MLS matches
         mls_match = await self.check_mls_match(listing)
         
-        if mls_match:
+        if not mls_match:
             # Add to filtered listings (not in MLS)
             self.filtered_listings.append(listing)
     
