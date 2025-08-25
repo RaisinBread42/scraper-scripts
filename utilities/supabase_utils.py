@@ -4,6 +4,16 @@ from typing import List, Dict
 from datetime import datetime
 from webhook_logger import WebhookLogger
 
+def trigger_failed_webhook_notification(e, webhook_logger):
+        error_message = str(e)
+        
+        # Send failure notification
+        webhook_logger.send_detailed_notification(
+            script_name="cireba.py",
+            status="failure",
+            error_message=error_message
+        )
+
 def normalize_listing_type(raw_type):
     """
     Normalize property type to standard categories:
@@ -129,14 +139,8 @@ def save_to_listings_table(results: List[Dict], table_name: str, include_mls: bo
             return True
             
     except Exception as e:
-        error_message = str(e)
-        
-        # Send failure notification
-        webhook_logger.send_detailed_notification(
-            script_name="supabase_utils.py",
-            status="failure",
-            error_message=error_message
-        )
+        print(e)
+        trigger_failed_webhook_notification(e, webhook_logger)
         return False
 
 def save_to_supabase(results: List[Dict]) -> bool:
