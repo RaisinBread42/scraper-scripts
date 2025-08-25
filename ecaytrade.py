@@ -1,40 +1,23 @@
 import re
 import asyncio
-from supabase import create_client, Client
-import json
-import os
 from dotenv import load_dotenv 
 from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig, DefaultMarkdownGenerator
-from typing import List, Dict
 from utilities.supabase_utils import deduplicate_listings, normalize_listing_type, save_to_ecaytrade_table
 from datetime import datetime
 from ecaytrade_mls_filter import filter_mls_listings
-from webhook_logger import WebhookLogger
 
 # Load environment variables from .env file
 load_dotenv()  # Add this line
 
-# Create directory for raw crawl results
-RAW_RESULTS_DIR = f"raw_crawl_results_ecaytrade_{datetime.now().strftime('%Y-%m-%d')}"
-
-
-def get_category_name(url):
-    """Extract category name from URL for file naming."""
-    if "type=lots--lands" in url:
-        return "land"
-    else:
-        return "properties"
-
-def convert_ci_to_usd(price_str, currency):
+def convert_ci_to_usd(price, currency):
     """Convert CI$ to USD using exact rate: 1 CI$ = 1.2195121951219512195121951219512 USD"""
-    if currency == "CI$" and price_str:
+    if currency == "CI$" and price:
         try:
-            ci_amount = float(price_str.replace(",", ""))
-            usd_amount = ci_amount * 1.2195121951219512195121951219512
+            usd_amount = price * 1.2195121951219512195121951219512
             return "US$", str(round(usd_amount, 2))
         except ValueError:
-            return currency, price_str
-    return currency, price_str
+            return currency, price
+    return currency, price
 
 def get_location_from_url(url):
     """Extract location from URL based on location parameter."""
@@ -45,143 +28,32 @@ def get_location_from_url(url):
     else:
         return "Grand Cayman"
 
-def save_crawl_result(result, url, page_number):
-    """Save raw crawl result to file for later parsing."""
-    # Create results directory if it doesn't exist
-    if not os.path.exists(RAW_RESULTS_DIR):
-        os.makedirs(RAW_RESULTS_DIR)
-    
-    category = get_category_name(url)
-    location = get_location_from_url(url)
-    # Create filename with location for better organization
-    location_short = location.lower().replace(" ", "_")
-    filename = f"{category}-{location_short}-page-{page_number}.json"
-    filepath = os.path.join(RAW_RESULTS_DIR, filename)
-    
-    # Prepare data to save
-    save_data = {
-        "url": url,
-        "page_number": page_number,
-        "category": category,
-        "timestamp": datetime.now().isoformat(),
-        "success": result.success,
-        "markdown": result.markdown if result.success else None,
-        "status_code": getattr(result, 'status_code', None),
-        "error": str(result.error_message) if hasattr(result, 'error_message') and result.error_message else None
-    }
-    
-    # Save to JSON file
-    with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(save_data, f, ensure_ascii=False, indent=2)
-    
-    return filepath
-
-def batch_save_crawl_results(crawl_results_list):
-    """Batch save all crawl results to files for better performance."""
-    if not crawl_results_list:
-        return
-    
-    # Create results directory if it doesn't exist
-    if not os.path.exists(RAW_RESULTS_DIR):
-        os.makedirs(RAW_RESULTS_DIR)
-    
-    
-    saved_count = 0
-    for crawl_data in crawl_results_list:
-        try:
-            category = get_category_name(crawl_data['url'])
-            location = get_location_from_url(crawl_data['url'])
-            # Create filename with location for better organization
-            location_short = location.lower().replace(" ", "_")
-            filename = f"{category}-{location_short}-page-{crawl_data['page_number']}.json"
-            filepath = os.path.join(RAW_RESULTS_DIR, filename)
-            
-            # Save to JSON file
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(crawl_data, f, ensure_ascii=False, indent=2)
-            
-            saved_count += 1
-        except Exception as e:
-            pass
-    
-
-def load_crawl_result(filepath):
-    """Load raw crawl result from file."""
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        return data
-    except Exception as e:
-        return None
-
-def get_saved_crawl_files(category=None, location=None):
-    """Get all saved crawl files for a specific category and/or location, sorted by page number."""
-    if not os.path.exists(RAW_RESULTS_DIR):
-        return []
-    
-    files = []
-    for filename in os.listdir(RAW_RESULTS_DIR):
-        if filename.endswith('.json'):
-            # Check if file matches the new naming pattern with location
-            if category and location:
-                location_short = location.lower().replace(" ", "_")
-                expected_prefix = f"{category}-{location_short}-page-"
-                if not filename.startswith(expected_prefix):
-                    continue
-            elif category:
-                # If only category specified, match any location for that category
-                if not (filename.startswith(f"{category}-grand_cayman-page-") or 
-                       filename.startswith(f"{category}-cayman_brac-page-") or 
-                       filename.startswith(f"{category}-little_cayman-page-")):
-                    continue
-            elif not category and not location:
-                # Match any valid file pattern
-                if not (filename.startswith("properties-") or filename.startswith("land-")):
-                    continue
-                
-            filepath = os.path.join(RAW_RESULTS_DIR, filename)
-            # Extract page number from filename
-            try:
-                page_num = int(filename.split('-page-')[1].split('.json')[0])
-                files.append((page_num, filepath))
-            except ValueError:
-                continue
-    
-    # Sort by page number
-    files.sort(key=lambda x: x[0])
-    return [filepath for _, filepath in files]
 
 async def crawl_category_pages(crawler, base_url, config):
     """Crawl all pages of a category and collect results in memory until no more listings are found."""
     page_number = 1
     pages_crawled = 0
     crawl_results = []
-    category = get_category_name(base_url)
-    location = get_location_from_url(base_url)
-    
     
     while True:
         # Build URL with current page number
         current_url = base_url.replace("page=1", f"page={page_number}")
         
-        
         # Crawl the current page
         result = await crawler.arun(url=current_url, config=config)
-        
+
         if not result.success:
-            break
+            error_message = str(result.error_message) if hasattr(result, 'error_message') and result.error_message else f"Failed to crawl {current_url}"
+            raise Exception(f"Crawling failed on page {page_number}: {error_message}")
         
-        # Check if page has content by looking for listings
-        parsed_listings = parse_markdown_list(result.markdown, current_url, location)
-        
-        if not parsed_listings or len(parsed_listings) == 0:
+        # Check if page has content (simple check for markdown length)
+        if not result.markdown or len(result.markdown.strip()) < 100:
             break
         
         # Store result in memory instead of saving to file immediately
         crawl_data = {
             "url": current_url,
             "page_number": page_number,
-            "category": category,
             "timestamp": datetime.now().isoformat(),
             "success": result.success,
             "markdown": result.markdown,
@@ -195,13 +67,9 @@ async def crawl_category_pages(crawler, base_url, config):
         # Move to next page
         page_number += 1
     
-    
-    # Batch write all logs for this category
-    
     return pages_crawled, crawl_results
 
-
-def parse_markdown_list(md_text, url=None, location=None):
+def parse_markdown_list(md_text, url=None):
     # Updated regex to capture location from __Location__ pattern in the markdown
     # Pattern captures: [ ![NAME](IMG) PROPERTY_TYPE (PRICE or "Price Upon Request") CONTENT __LOCATION__ ](LINK)
     pattern = re.compile(
@@ -211,9 +79,7 @@ def parse_markdown_list(md_text, url=None, location=None):
     results = []
     
     # Extract base location from URL if not provided (Grand Cayman, Cayman Brac, Little Cayman)
-    base_location = location
-    if not base_location and url:
-        base_location = get_location_from_url(url)
+    base_location = get_location_from_url(url)
     
     for match in pattern.finditer(md_text):
         name = match.group(1).strip()
@@ -221,21 +87,8 @@ def parse_markdown_list(md_text, url=None, location=None):
         property_type = match.group(3).strip()
         currency = match.group(4)
         price = match.group(5)
-        additional_content = match.group(6).strip()
         specific_location = match.group(7).strip()  # Location from __Location__ pattern
         link = match.group(8)
-        
-        # Handle price formatting
-        if currency and price:
-            # Regular price case
-            price_clean = price.replace(",", "")
-            currency_clean = currency
-        else:
-            price_clean = "0"  # Use "0" to indicate price upon request in numeric fields
-            currency_clean = "US$"
-        
-        # Normalize the property type using the utility function
-        listing_type = normalize_listing_type(property_type)
         
         # Format location with base location appended
         if specific_location and specific_location == "Grand Cayman":
@@ -243,57 +96,80 @@ def parse_markdown_list(md_text, url=None, location=None):
         else:
             final_location = base_location # otherwise cayman brac or little cayman shows twice.
         
-        results.append({
+        results.append(clean_listing_data({
             "name": name,
-            "currency": currency_clean,
-            "price": price_clean,
+            "currency": currency,
+            "price": price,
             "link": link,
-            "listing_type": listing_type,
+            "listing_type": property_type,
             "image_link": image_link,
             "location": final_location,  # Store formatted location with base appended
             "base_location": base_location,  # Store the URL-derived location as well
-            "raw_property_type": property_type  # Keep original for debugging
-        })
+        }))
     
     return results
 
-def process_saved_category_results(category):
-    """Process saved crawl results for a category, parse listings, and return results."""
-    saved_files = get_saved_crawl_files(category)
+def clean_listing_data(listing):
+    """Clean and convert listing data types"""
+
+    sqft = None
+    if listing.get('sqft'):
+        try:
+            sqft = int(listing['sqft'].replace(',', '')) if isinstance(listing['sqft'], str) else int(listing['sqft'])
+        except (ValueError, TypeError):
+            sqft = None
     
-    if not saved_files:
-        return []
+    beds = None
+    if listing.get('beds'):
+        try:
+            beds = int(float(listing['beds'])) if isinstance(listing['beds'], str) else int(listing['beds'])
+        except (ValueError, TypeError):
+            beds = None
     
-    all_category_listings = []
+    baths = None
+    if listing.get('baths'):
+        try:
+            baths = int(float(listing['baths'])) if isinstance(listing['baths'], str) else int(listing['baths'])
+        except (ValueError, TypeError):
+            baths = None
     
-    for filepath in saved_files:
-        # Load the saved crawl result
-        crawl_data = load_crawl_result(filepath)
-        
-        if not crawl_data or not crawl_data.get('success'):
-            continue
-        
-        # Extract location from the URL in the crawl data
-        url = crawl_data.get('url')
-        location = get_location_from_url(url) if url else None
-        
-        # Parse the markdown content with location info
-        parsed_listings = parse_markdown_list(crawl_data['markdown'], url, location)
-        
-        if not parsed_listings:
-            continue
-        
-        all_category_listings.extend(parsed_listings)
+    price = None
+    if listing.get('price'):
+        try:
+            price = float(listing['price'].replace(',', '')) if isinstance(listing['price'], str) else float(listing['price'])
+        except (ValueError, TypeError):
+            price = 0.0
     
-    return all_category_listings
+    acres = None
+    if listing.get('acres'):
+        try:
+            acres = float(listing['acres']) if isinstance(listing['acres'], str) else float(listing['acres'])
+        except (ValueError, TypeError):
+            acres = None
+    
+    # convert currency to US
+    converted_currency, converted_price = convert_ci_to_usd(price, listing.get('currency', 'CI$'))
+    
+    listing['currency'] = converted_currency
+    listing['price'] = converted_price
+
+    # Normalize listing type
+    listing_type = normalize_listing_type(listing.get('listing_type', ''))
+    
+    # Update the listing with clean data
+    cleaned_listing = listing.copy()
+    cleaned_listing.update({
+        'sqft': sqft,
+        'beds': beds,
+        'baths': baths,
+        'price': price,
+        'acres': acres,
+        'listing_type': listing_type
+    })
+    
+    return cleaned_listing
 
 async def main():
-    # Initialize webhook logger
-    webhook_logger = WebhookLogger()
-    
-    # Initialize tracking variables for notification
-    category_results = []
-    new_listings_saved = 0
     
     # Base URLs for each category
     base_urls = [
@@ -305,15 +181,8 @@ async def main():
         "https://ecaytrade.com/real-estate/for-sale?page=1&minprice=25000&type=lots--lands&location=Little%20Cayman&sort=date-high"
     ]
     
-    # ===== PHASE 1: CRAWL AND SAVE RAW RESULTS =====
-    # Check if we already have saved results for today
-    skip_crawling = os.path.exists(RAW_RESULTS_DIR) and os.listdir(RAW_RESULTS_DIR)
-    
-    if skip_crawling:
-        pass
-    else:
-        try:
-            
+    # ===== PHASE 1: CRAWL RESULTS =====
+    try:
             # Create an instance of AsyncWebCrawler
             async with AsyncWebCrawler() as crawler:
                 cleaned_md_generator = DefaultMarkdownGenerator(
@@ -325,7 +194,7 @@ async def main():
                     markdown_generator = cleaned_md_generator,
                     cache_mode=CacheMode.BYPASS,
                     wait_for_images = False,
-                    scan_full_page = False,
+                    scan_full_page = True, # required for ecaytrade
                     scroll_delay=0.3
                 )
 
@@ -334,144 +203,39 @@ async def main():
                 all_crawl_results = []
                 
                 for base_url in base_urls:
-                    category = get_category_name(base_url)
-                    location = get_location_from_url(base_url)
-                    
                     pages_crawled, crawl_results = await crawl_category_pages(crawler, base_url, config)
                     total_pages_crawled += pages_crawled
                     all_crawl_results.extend(crawl_results)
                     
-                
-                
-                # Batch save all crawl results to files
-                batch_save_crawl_results(all_crawl_results)
-                
-        except Exception as e:
-            pass
-            error_message = f"Failed during crawling phase: {e}"
-            
-            # Send failure notification
-            try:
-                webhook_logger.send_detailed_notification(
-                    script_name="ecaytrade.py",
-                    status="failure",
-                    error_message=error_message
-                )
-            except Exception as webhook_error:
-                pass
-            return  # Stop execution
+    except Exception as e:
+        print(f"Failed during crawling phase: {e}")
+        return  # Stop execution
     
-    # ===== PHASE 2: PROCESS SAVED RESULTS =====
+    # ===== PHASE 2: PROCESS ALL CRAWL RESULTS =====
     try:
+        # Parse all listings from crawl results
+        all_listings = []
         
-        # Process each category's saved results and group by URL
-        parsed_listings_by_url = {}
-        categories = ["properties", "land"]
+        for crawl_data in all_crawl_results:
+            all_listings.append = parse_markdown_list(crawl_data['markdown'], crawl_data.get('url'))
         
-        for category in categories:
-            
-            # Parse listings from saved files
-            category_listings = process_saved_category_results(category)
-            
-            # Apply currency conversion to all parsed listings
-            if category_listings:
-                for listing in category_listings:
-                    original_currency = listing.get('currency', 'CI$')
-                    original_price = listing.get('price', '0')
-                    converted_currency, converted_price = convert_ci_to_usd(original_price, original_currency)
-                    listing['currency'] = converted_currency
-                    listing['price'] = converted_price
-            
-            if not category_listings:
-                # Track category results even if empty
-                category_result = {
-                    "category": category,
-                    "url": f"ecaytrade.com/{category}",
-                    "new_listings": 0,
-                    "existing_skipped": 0
-                }
-                category_results.append(category_result)
-                continue
-            
-            # Get the base URL for this category
-            saved_files = get_saved_crawl_files(category)
-            if saved_files:
-                first_crawl_data = load_crawl_result(saved_files[0])
-                if first_crawl_data:
-                    base_url = first_crawl_data['url']
-                    parsed_listings_by_url[base_url] = deduplicate_listings(category_listings)
-                    
-                    # Track category results for webhook notification
-                    category_result = {
-                        "category": category,
-                        "url": base_url,
-                        "new_listings": 0,  # Will be updated after duplicate detection
-                        "existing_skipped": 0  # Will be updated after duplicate detection
-                    }
-                    category_results.append(category_result)
-        
-        # ===== PHASE 3: DUPLICATE DETECTION AND BATCH SAVE =====
-        if parsed_listings_by_url:
-            total_listings = sum(len(listings) for listings in parsed_listings_by_url.values())
+        if all_listings:
+            # Group by URL for MLS filtering
+            parsed_listings_by_url = {}
+            first_url = all_crawl_results[0]['url'] if all_crawl_results else ""
+            parsed_listings_by_url[first_url] = all_listings
             
             # Call MLS listing filter
-            success, prepared_listings = filter_mls_listings(parsed_listings_by_url)
+            success, prepared_listings = filter_mls_listings(all_listings)
             
-            if success:
-                # Save new listings to Supabase using existing function like cireba.py
-                if prepared_listings:
-                    
-                    # Use the first URL as target_url for saving
-                    first_url = next(iter(parsed_listings_by_url.keys())) if parsed_listings_by_url else ""
-                    
-                    # Save to ecaytrade_listings table - prepared_listings already in correct format
-                    if save_to_ecaytrade_table(first_url, deduplicate_listings(prepared_listings)):
-                        new_listings_saved = len(prepared_listings)
-                    else:
-                        pass
-                else:
-                    pass
-                    
-                # Update category results with actual new listings count
-                if category_results:
-                    # Split new listings evenly across categories for notification
-                    listings_per_category = new_listings_saved // len(category_results) if category_results else 0
-                    for i, category_result in enumerate(category_results):
-                        category_result["new_listings"] = listings_per_category
-                        if i == 0:  # Add remainder to first category
-                            category_result["new_listings"] += new_listings_saved % len(category_results)
-                        category_result["existing_skipped"] = total_listings - new_listings_saved
-                            
-            else:
-                pass
-        else:
-            pass
-        
-        # Send webhook notification
-        try:
-            webhook_logger.send_detailed_notification(
-                script_name="ecaytrade.py",
-                status="success",
-                existing_mls_count=0,  # ecaytrade doesn't track existing MLS like cireba
-                category_results=category_results,
-                new_mls_saved=new_listings_saved,
-            )
-        except Exception as e:
-            pass
+            if success and prepared_listings:
+                # Save to ecaytrade_listings table
+                save_to_ecaytrade_table(first_url, prepared_listings)
+                
+        # TODO: Import and call stats/webhook module here
         
     except Exception as e:
-        # Handle any processing errors
-        error_message = f"Failed during processing phase: {e}"
-        
-        # Send failure notification
-        try:
-            webhook_logger.send_detailed_notification(
-                script_name="ecaytrade.py",
-                status="failure",
-                error_message=error_message
-            )
-        except Exception as webhook_error:
-            pass
+        print(f"Failed during processing phase: {e}")
         return  # Stop execution
 
 # Run the async main function
