@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 import os
+import re
+import asyncio
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
+from crawl4ai import CacheMode, CrawlerRunConfig, DefaultMarkdownGenerator
 from supabase import create_client, Client
 from dotenv import load_dotenv
-from fuzzywuzzy import fuzz
+from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig, DefaultMarkdownGenerator
 
 """
 MLS Listing Filter Script for Property Listings
@@ -89,54 +92,63 @@ class MLSListingDetector:
         """Check if two USD prices match within tolerance"""
         return abs(price1_usd - price2_usd) <= tolerance
     
-    def fuzzy_name_match(self, name1: str, name2: str) -> float:
-        """Calculate fuzzy similarity between two listing names"""
-        if not name1 or not name2:
-            return 0.0
-        
-        # Clean names for comparison
-        clean_name1 = name1.lower().strip()
-        clean_name2 = name2.lower().strip()
-        
-        # Use ratio for general similarity
-        similarity = fuzz.ratio(clean_name1, clean_name2)
-        return similarity
+    async def check_mls_number_in_listing(self, listing_url: str) -> bool:
+        """Crawl EcayTrade listing URL and check for MLS number via regex"""
+        try:
+            async with AsyncWebCrawler() as crawler:
+                cleaned_md_generator = DefaultMarkdownGenerator(content_source="raw_html")
+                config = CrawlerRunConfig(
+                    target_elements="p",
+                    markdown_generator=cleaned_md_generator,
+                    cache_mode=CacheMode.BYPASS,
+                    wait_for_images=False,
+                    scan_full_page=True,
+                    scroll_delay=0.3
+                )
+                result = await crawler.arun(url=listing_url, config=config)
+                
+                if not result or not result.markdown:
+                    raise Exception('failure getting mls listing from listing url')
+                
+                # Regex pattern to find MLS numbers (common formats: MLS-123456, MLS#123456, MLS 123456, MLS#: 419589, etc.)
+                mls_pattern = r'MLS[#\s-]*:?\s*(\d{6,})|Multiple[\s]*Listing[\s]*Service[\s]*[#:]?[\s]*(\d{6,})'
+                
+                return bool(re.search(mls_pattern, result.markdown, re.IGNORECASE))
+                
+        except Exception as e:
+            return False
     
-    def check_mls_match(self, new_listing: Dict) -> Optional[Dict]:
+    async def check_mls_match(self, new_listing: Dict) -> bool:
         """Check if EcayTrade listing matches existing MLS listing"""
 
         price = new_listing.get('price', 0)
-        new_name = new_listing.get('name', '')
-        new_location = new_listing.get('location', '')
+        listing_url = new_listing.get('link', '')
         
         for existing in self.mls_listings:
             # First check: exact price match
             if self.exact_price_match(price, existing['price']):
-                # Second check: fuzzy name match
-                name_similarity = self.fuzzy_name_match(new_name, existing['name'])
-                if name_similarity >= 30.0:
-                    # Third check: location fuzzy match
-                    location_similarity = self.fuzzy_name_match(new_location, existing.get('location', ''))
-                    if location_similarity >= 30.0:
-                        return {
-                            'existing_listing': existing,
-                            'name_similarity_score': name_similarity,
-                            'location_similarity_score': location_similarity
-                        }
+                # Second check: crawl listing URL and check for MLS number
+                
+                has_mls_number = await self.check_mls_number_in_listing(listing_url) # doesn't have to be same MLS number, just any!
+
+                if has_mls_number:
+                    return True
+                else:
+                    return False
         
-        return None
+        return False
     
-    def process_listing(self, listing: Dict) -> None:
+    async def process_listing(self, listing: Dict) -> None:
         """Process a single listing for duplicates - assumes USD pricing"""
 
         # Check for MLS matches
-        mls_match = self.check_mls_match(listing)
+        mls_match = await self.check_mls_match(listing)
         
-        if not mls_match:
+        if mls_match:
             # Add to filtered listings (not in MLS)
             self.filtered_listings.append(listing)
     
-def filter_mls_listings(parsed_listings: List[Dict]) -> Tuple[bool, List[Dict]]:
+async def filter_mls_listings(parsed_listings: List[Dict]) -> Tuple[bool, List[Dict]]:
     """
     Main function to filter EcayTrade listings against existing MLS listings
     
@@ -154,7 +166,7 @@ def filter_mls_listings(parsed_listings: List[Dict]) -> Tuple[bool, List[Dict]]:
     
     # Phase 2: Process all new listings
     for listing in parsed_listings:
-        detector.process_listing(listing)
+        await detector.process_listing(listing)
     
     # Phase 3: Prepare filtered listings for save
     prepared_listings = detector.filtered_listings
