@@ -88,7 +88,7 @@ class MLSListingDetector:
         else:
             return 'unknown'
     
-    def exact_price_match(self, price1_usd: float, price2_usd: float, tolerance: float = 50.0) -> bool:
+    def exact_price_match(self, price1_usd: float, price2_usd: float, tolerance: float = 10.0) -> bool:
         """Check if two USD prices match within tolerance"""
         return abs(price1_usd - price2_usd) <= tolerance
     
