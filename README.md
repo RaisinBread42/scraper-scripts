@@ -1,266 +1,152 @@
 # Real Estate Listings Scraper System
 
-## Business Overview
+## Overview
 
-This automated system collects and processes real estate listings from multiple sources in the Cayman Islands market, providing comprehensive property data for market analysis and business intelligence. The system scrapes listings from major real estate platforms, eliminates duplicates, and stores standardized data in a centralized database.
+This system scrapes real estate listings from Cireba.com and EcayTrade.com in the Cayman Islands, filters out duplicates, and stores the data in a Supabase database.
 
-### Key Business Value
-- **Market Intelligence**: Automated collection of property listings across all major platforms
-- **Data Standardization**: Normalized property types, prices (converted to USD), and locations
-- **Duplicate Prevention**: Advanced filtering prevents data redundancy and maintains data quality
-- **Real-time Monitoring**: Webhook notifications for new listings and system status updates
-- **Audit Trail**: Complete job history and logging for compliance and troubleshooting
+### What it does
+- Scrapes property listings from two main real estate websites
+- Converts prices to USD and standardizes data
+- Removes duplicate MLS listings between sources
+- Sends notifications about runs and errors
+- Keeps logs and cleans up old data
 
-## System Architecture
+## How it works
 
-### High-Level Workflow
-The system operates through the **Master Orchestrator** (`run_all_scrapers.py`) which executes four primary phases:
+The main script `run_all_scrapers.py` runs these steps:
 
-1. **Data Collection Phase**: Scrapes listings from Cireba.com and EcayTrade.com
-2. **Data Processing Phase**: Filters duplicates and standardizes data formats
-3. **File Maintenance Phase**: Cleans up log files and temporary data
-4. **Database Maintenance Phase**: Removes old listings to maintain optimal database performance
+1. **Scrape Cireba** (20 min timeout) - Gets MLS listings 
+2. **Scrape EcayTrade** (15 min timeout) - Gets listings, filters out MLS duplicates
+3. **Clean logs** (5 min timeout) - Removes old log files
+4. **Clean database** (10 min timeout) - Removes listings older than 3 days
 
-## Master Orchestrator: `run_all_scrapers.py`
-
-### Business Process Flow
-
-#### Phase 1: Market Data Collection (35 minutes total)
-1. **Cireba Scraper** (20-minute timeout)
-   - Scrapes all property categories across Grand Cayman, Cayman Brac, and Little Cayman
-   - Processes homes, condos, duplexes, and land properties
-   - Applies $100K minimum price filter to focus on significant listings
-
-2. **EcayTrade Scraper** (15-minute timeout)
-   - Scrapes properties and land listings from all three islands
-   - Uses different price thresholds ($100K for properties, $25K for land)
-   - Includes MLS duplicate detection and filtering. Only want to include non-MLS listings
-
-#### Phase 2: File Maintenance (5 minutes)
-3. **Log Cleanup** (5-minute timeout)
-   - Removes log files older than 3 days
-   - Cleans temporary crawl result directories
-   - Maintains system storage efficiency
-
-#### Phase 3: Database Maintenance (10 minutes)
-4. **Database Cleanup** (10-minute timeout)
-   - Removes cireba_listings older than 3 days UTC
-   - Removes ecaytrade_listings older than 3 days UTC
-   - Maintains optimal database performance and reduces storage costs
-   - Provides detailed statistics on cleanup operations
-
-#### Key Features
-- **Job History Tracking**: Records each run in database for audit purposes
-- **Error Handling**: Individual script failures don't stop the entire process
-- **Comprehensive Logging**: Detailed logs with timestamps for troubleshooting
-- **Status Reporting**: Success/failure summary with script-level details
-
----
-
-## Individual Components
+## Scripts
 
 ### 1. Cireba Scraper (`cireba.py`)
 
-**Business Purpose**: Extracts listings from Cireba.com, the primary MLS platform in the Cayman Islands.
+Gets listings from Cireba.com (the main MLS site).
 
-#### Key Capabilities
-- **Multi-Island Coverage**: Grand Cayman, Cayman Brac, Little Cayman
-- **Category Segmentation**: Homes, Condos, Land, Commercial properties
-- **Price Filtering**: $100K minimum to focus on substantial listings
-- **MLS Integration**: Direct access to official MLS data
+**What it does:**
+- Scrapes homes, condos, and land from all three islands
+- Only gets properties $100K+ to focus on significant listings
+- Processes in 3 phases: fetching → parsing → saving to database
 
-#### Data Processing Pipeline
-1. **Web Crawling**: Uses advanced markdown extraction for clean data parsing
-2. **Data Standardization**: Converts all prices to USD, normalizes property types
-3. **Geographic Organization**: Categorizes listings by island and district
-4. **Database Storage**: Saves to `cireba_listings` table with full property details
-
-#### Business Metrics Captured
-- Property name, type, and location
-- Pricing in standardized USD currency
-- Property specifications (beds, baths, square footage)
-- MLS numbers for unique identification
-- High-resolution image links
+**Recent changes:**
+- No more silent failures - all conversion errors trigger webhook notifications
+- Script stops if parsing fails to ensure data quality
 
 ### 2. EcayTrade Scraper (`ecaytrade.py`)
 
-**Business Purpose**: Captures listings from EcayTrade.com to provide comprehensive market coverage beyond MLS listings.
+Gets listings from EcayTrade.com but filters out ones that are already in MLS.
 
-#### Key Capabilities
-- **Comprehensive Coverage**: Properties ($100K+) and Land ($25K+)
-- **Multi-Location Processing**: All three Cayman Islands
-- **Intelligent Crawling**: Automatic page detection and processing
-- **Raw Data Preservation**: Saves crawl results for potential reprocessing
+**What it does:**
+- Scrapes properties $100K+ and land $25K+
+- Converts CI$ to USD (rate: 1.22)
+- Filters out MLS duplicates using price matching and URL crawling
+- Processes in 4 phases: fetching → parsing → MLS filtering → saving
 
-#### Advanced Features
-- **Currency Conversion**: Automatic CI$ to USD conversion (rate: 1 CI$ = 1.2195121951219512195121951219512 USD)
-- **Location Enhancement**: Combines specific and general location data
-- **Duplicate Prevention**: Integration with MLS filter before database storage
-- **Robust Error Handling**: Continues processing even if individual pages fail
+**Recent changes:**
+- No more silent failures - conversion errors trigger webhooks instead of setting price to 0
+- All field conversions raise exceptions on failure
 
-#### Three-Phase Processing
-1. **Crawl Phase**: Downloads and saves raw HTML data
-2. **Parse Phase**: Extracts structured listing data from saved HTML
-3. **Filter Phase**: Applies MLS duplicate detection before database storage
+### 3. MLS Filter (`ecaytrade_mls_filter.py`)
 
-### 3. MLS Listing Filter (`ecaytrade_mls_filter.py`)
+Prevents duplicate listings between MLS (Cireba) and EcayTrade.
 
-**Business Purpose**: Prevents duplicate listings between MLS (Cireba) and secondary sources (EcayTrade) to maintain data quality.
+**How it works:**
+1. Loads all existing Cireba listings from database
+2. For each EcayTrade listing, checks if price matches any Cireba listing (±$50)
+3. If price matches, crawls the EcayTrade URL to look for MLS numbers
+4. Uses regex to find MLS numbers like "MLS#: 123456" or "MLS-123456"  
+5. Filters out listings that have both price match AND MLS numbers
 
-#### Core Business Logic
-- **Price Matching**: Uses $100 tolerance for price comparisons (accounts for listing variations)
-- **Name Similarity**: 85% fuzzy matching threshold to catch similar property names
-- **Quality Threshold**: Only processes listings $200K+ to focus on significant properties
-- **Audit Trail**: Detailed logging of all matches and filtering decisions
+**Recent changes:**
+- Removed fuzzy name matching (was unreliable)
+- Now crawls URLs in real-time to detect MLS numbers
+- Uses exact price matching only
 
-#### Duplicate Detection Process
-1. **MLS Loading**: Retrieves all existing Cireba listings for comparison
-2. **New Listing Processing**: Evaluates each EcayTrade listing against MLS database
-3. **Match Analysis**: Combines price and name similarity scoring
-4. **Webhook Notifications**: Sends duplicate alerts to monitoring system
-5. **Clean Data Output**: Returns only unique listings for database storage
+### 4. Database Utils (`utilities/supabase_utils.py`)
 
-#### Business Impact
-- **Data Quality**: Eliminates redundant listings across platforms
-- **Cost Efficiency**: Reduces storage and processing overhead
-- **Market Accuracy**: Provides true unique listing counts for market analysis
+Handles saving data to Supabase database.
 
-### 4. Database Utilities (`utilities/supabase_utils.py`)
+- Normalizes property types
+- Prevents duplicates within each source
+- Tracks job history for monitoring
 
-**Business Purpose**: Provides standardized data storage and retrieval operations for all scrapers.
+### 5. Webhook Logger (`webhook_logger.py`)
 
-#### Key Functions
-- **Property Type Normalization**: Standardizes categories (Home, Land, Condo, etc.)
-- **Duplicate Detection**: Database-level duplicate prevention within sources
-- **Batch Operations**: Efficient bulk data insertion and updates
-- **Job History Tracking**: Maintains audit trail of all scraping activities
+Sends notifications about scraper runs.
 
-#### Data Quality Features
-- **Field Validation**: Ensures data integrity before database insertion
-- **Type Conversion**: Handles numeric conversions for prices, square footage, etc.
-- **Null Handling**: Manages missing data gracefully
-- **Constraint Enforcement**: Prevents invalid data from entering system
+- Success notifications with statistics
+- Failure alerts with error details  
+- Reports on filtered MLS duplicates
 
-### 5. Webhook Notifications (`webhook_logger.py`)
+### 6. Log Cleanup (`cleanup_logs.py`)
 
-**Business Purpose**: Provides real-time monitoring and alerting for system operations.
+Removes log files older than 3 days to save storage space.
 
-#### Notification Types
-- **Success Notifications**: Summary statistics for completed scraping runs
-- **Failure Alerts**: Immediate notification of system errors or failures
-- **Duplicate Reports**: Detailed information about filtered duplicate listings
-- **Performance Metrics**: Runtime statistics and data volumes processed
+### 7. Database Cleanup (`cleanup_database.py`)
 
-### 6. File System Maintenance (`cleanup_logs.py`)
+Removes listings older than 3 days from both tables to control database size and costs.
 
-**Business Purpose**: Maintains system performance and storage efficiency through automated file cleanup.
+## Database Tables
 
-#### Cleanup Operations
-- **Log File Management**: Removes logs older than 3 days
-- **Temporary Data Cleanup**: Clears crawl result directories after processing
-- **Storage Optimization**: Reports space freed and maintains system efficiency
-- **Selective Preservation**: Keeps recent files for troubleshooting purposes
+- `cireba_listings` - MLS listings from Cireba.com
+- `ecaytrade_listings` - Non-MLS listings from EcayTrade.com  
+- `scraping_job_history` - Audit trail of all scraper runs
 
-### 7. Database Maintenance (`cleanup_database.py`)
+## Setup
 
-**Business Purpose**: Maintains optimal database performance and controls storage costs by removing old listing data.
-
-#### Core Functionality
-- **Automated Cleanup**: Removes listings older than 3 days UTC from both tables
-- **Batch Processing**: Deletes records in batches to avoid timeouts and maintain system stability
-- **Statistics Reporting**: Provides before/after counts and deletion summaries
-- **Error Handling**: Graceful handling of database connectivity and permission issues
-
-#### Business Benefits
-- **Cost Control**: Reduces database storage costs by maintaining only recent, relevant data
-- **Performance Optimization**: Keeps query performance optimal by limiting table sizes
-- **Data Freshness**: Ensures analysis focuses on current market conditions
-- **Storage Efficiency**: Prevents unlimited database growth while maintaining operational data
-
-#### Safety Features
-- **UTC Timezone Handling**: Uses standardized UTC timestamps for reliable date comparisons
-- **Batch Deletion**: Processes deletions in controlled batches (100 records) to prevent system overload
-- **Comprehensive Logging**: Detailed logs of all deletion activities for audit purposes
-- **Statistics Tracking**: Reports total records, recent activity, and cleanup impact
-
----
-
-## Data Storage Schema
-
-### Database Tables
-
-#### `cireba_listings`
-- **Purpose**: Stores MLS listings from Cireba.com
-- **Key Fields**: MLS number, property details, pricing, location data
-- **Business Use**: Primary source for official market data
-
-#### `ecaytrade_listings` 
-- **Purpose**: Stores unique non-MLS listings from EcayTrade.com
-- **Key Fields**: Property name, specifications, pricing, location
-- **Business Use**: Secondary market data for comprehensive coverage
-
-#### `scraping_job_history`
-- **Purpose**: Audit trail of all system operations
-- **Key Fields**: Script name, execution timestamp, status
-- **Business Use**: System monitoring and compliance reporting
-
----
-
-## Configuration and Requirements
-
-### Environment Variables Required
+### Environment Variables
 ```
-SUPABASE_URL=<your-supabase-project-url>
-SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
+SUPABASE_URL=<your-supabase-url>
+SUPABASE_SERVICE_ROLE_KEY=<your-service-key>
 ```
 
-### Python Dependencies
-- **Web Crawling**: `crawl4ai` for advanced HTML processing
-- **Database**: `supabase` for cloud database operations
-- **Data Processing**: `fuzzywuzzy` for duplicate detection
-- **Utilities**: `requests`, `dotenv` for HTTP and configuration
+### Requirements
+- Python 3.8+
+- `crawl4ai` for web scraping and URL crawling
+- `supabase` for database
+- Stable internet connection
 
-### System Requirements
-- **Runtime**: Python 3.8+
-- **Memory**: 2GB+ RAM recommended for large crawling operations
-- **Storage**: 1GB+ free space for temporary data and logs
-- **Network**: Stable internet connection for web scraping and database operations
+## Recent Improvements
 
----
+### Better Error Handling
+- All conversion errors now trigger webhook notifications
+- No more silent failures that set prices to 0
+- Scripts fail fast on parsing errors
 
-## Monitoring and Troubleshooting
+### Better MLS Detection  
+- Crawls EcayTrade URLs to detect MLS numbers using regex
+- Exact price matching instead of unreliable fuzzy matching
+- Prevents false duplicates
 
-### Log Files Generated
-- `run-all-scrapers-YYYY-MM-DD.txt`: Master orchestrator logs
-- `cireba-YYYY-MM-DD.txt`: Cireba scraper detailed logs
-- `ecaytrade-YYYY-MM-DD.txt`: EcayTrade scraper detailed logs
-- `mls-listing-detector-YYYY-MM-DD.txt`: Duplicate detection logs
-- `supabase-YYYY-MM-DD.txt`: Database operation logs
-- `database-cleanup-YYYY-MM-DD.txt`: Database maintenance logs
+### Better Data Quality
+- Price validation prevents zero-price listings
+- All numeric conversions validated with error reporting
 
-### Performance Metrics
-- **Cireba Processing**: Typically processes 500-1000 listings per run
-- **EcayTrade Processing**: Handles 200-500 listings with duplicate filtering
-- **Database Cleanup**: Removes 100-500 old listings per run (varies by activity)
-- **Runtime**: Complete cycle typically completes in 10-15 minutes including database cleanup
+## Usage
 
-
----
-
-## Usage Instructions
-
-### Daily Automated Run
+### Run everything
 ```bash
 python run_all_scrapers.py
 ```
 
-### Individual Component Testing
+### Test individual scripts
 ```bash
-python cireba.py            # Test MLS scraping only
-python ecaytrade.py         # Test EcayTrade scraping only
-python cleanup_logs.py      # Test file maintenance operations only
-python cleanup_database.py  # Test database maintenance operations only
+python cireba.py            # Test Cireba scraping
+python ecaytrade.py         # Test EcayTrade scraping  
+python cleanup_logs.py      # Test log cleanup
+python cleanup_database.py  # Test database cleanup
 ```
 
+## Performance
 
-This system provides comprehensive, automated real estate data collection with enterprise-grade reliability, data quality controls, and monitoring capabilities.
+- Cireba: ~500-1000 listings per run
+- EcayTrade: ~200-500 listings after MLS filtering
+- MLS URL crawling: adds 1-2 seconds per potential duplicate
+- Total runtime: 15-25 minutes including URL crawling
+
+## Logs
+
+Logs are output to console and webhook notifications are sent for errors and status updates.
