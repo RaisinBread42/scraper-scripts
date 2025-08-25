@@ -16,47 +16,44 @@ def clean_and_validate_listings(listings: List[Dict]) -> List[Dict]:
     cleaned_listings = []
     
     for listing in listings:
-        # Currency conversion
-        currency = listing.get('currency', 'CI$')
-        price = listing.get('price', 0)
+        try:
+            price = float(listing.get('price', 0).replace(',',''))
+            listing['price'] = price
+
+            currency = listing.get('currency', 'CI$')
         
-        if currency == "CI$" and price:
-            try:
+            if currency == "CI$" and price:
                 usd_amount = price * 1.2195121951219512195121951219512
                 listing['currency'] = "US$"
                 listing['price'] = round(usd_amount, 2)
-            except (ValueError, TypeError):
-                listing['price'] = 0.0
-        else:
-            try:
-                listing['price'] = float(price) if price else 0.0
-            except (ValueError, TypeError):
-                listing['price'] = 0.0
+
+        except (ValueError, TypeError) as e:
+            raise Exception(f"Price conversion failed for listing {listing.get('price', 'Unknown')}: {e}")
         
         # Data type validation
         if listing.get('sqft'):
             try:
                 listing['sqft'] = int(str(listing['sqft']).replace(',', ''))
-            except (ValueError, TypeError):
-                listing['sqft'] = None
+            except (ValueError, TypeError) as e:
+                raise Exception(f"Sqft conversion failed for listing {listing.get('sqft', 'Unknown')}: {e}")
         
         if listing.get('beds'):
             try:
                 listing['beds'] = int(float(listing['beds']))
-            except (ValueError, TypeError):
-                listing['beds'] = None
+            except (ValueError, TypeError) as e:
+                raise Exception(f"Beds conversion failed for listing {listing.get('beds', 'Unknown')}: {e}")
         
         if listing.get('baths'):
             try:
                 listing['baths'] = int(float(listing['baths']))
-            except (ValueError, TypeError):
-                listing['baths'] = None
+            except (ValueError, TypeError) as e:
+                raise Exception(f"Baths conversion failed for listing {listing.get('baths', 'Unknown')}: {e}")
         
         if listing.get('acres'):
             try:
                 listing['acres'] = float(listing['acres'])
-            except (ValueError, TypeError):
-                listing['acres'] = None
+            except (ValueError, TypeError) as e:
+                raise Exception(f"Acres conversion failed for listing {listing.get('acres', 'Unknown')}: {e}")
         
         cleaned_listings.append(listing)
     

@@ -46,7 +46,7 @@ class MLSListingDetector:
             
             while True:
                 response = self.supabase.table('cireba_listings').select(
-                    'id, name, price, currency, link, target_url'
+                    'id, name, price, currency, link, target_url, location'
                 ).range(offset, offset + page_size - 1).execute()
                 
                 if not response.data:
@@ -67,6 +67,7 @@ class MLSListingDetector:
                     'name': listing.get('name', ''),
                     'price': listing.get('price', ''),
                     'link': listing.get('link', ''),
+                    'location': listing.get('location', ''),
                     'source': self.extract_source_from_url(listing.get('target_url', ''))
                 })
             
@@ -88,7 +89,7 @@ class MLSListingDetector:
         """Check if two USD prices match within tolerance"""
         return abs(price1_usd - price2_usd) <= tolerance
     
-    def fuzzy_name_match(self, name1: str, name2: str, threshold: int = 85) -> float:
+    def fuzzy_name_match(self, name1: str, name2: str) -> float:
         """Calculate fuzzy similarity between two listing names"""
         if not name1 or not name2:
             return 0.0
@@ -106,17 +107,22 @@ class MLSListingDetector:
 
         price = new_listing.get('price', 0)
         new_name = new_listing.get('name', '')
+        new_location = new_listing.get('location', '')
         
         for existing in self.mls_listings:
             # First check: exact price match
             if self.exact_price_match(price, existing['price']):
                 # Second check: fuzzy name match
-                similarity = self.fuzzy_name_match(new_name, existing['name'])
-                if similarity >= 85.0:
-                    return {
-                        'existing_listing': existing,
-                        'similarity_score': similarity
-                    }
+                name_similarity = self.fuzzy_name_match(new_name, existing['name'])
+                if name_similarity >= 30.0:
+                    # Third check: location fuzzy match
+                    location_similarity = self.fuzzy_name_match(new_location, existing.get('location', ''))
+                    if location_similarity >= 30.0:
+                        return {
+                            'existing_listing': existing,
+                            'name_similarity_score': name_similarity,
+                            'location_similarity_score': location_similarity
+                        }
         
         return None
     
