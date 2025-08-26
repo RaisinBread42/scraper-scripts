@@ -34,6 +34,7 @@ Gets listings from Cireba.com (the main MLS site).
 **Recent changes:**
 - No more silent failures - all conversion errors trigger webhook notifications
 - Script stops if parsing fails to ensure data quality
+- Added duplicate removal by link to prevent processing the same listing multiple times
 
 ### 2. EcayTrade Scraper (`ecaytrade.py`)
 
@@ -48,6 +49,7 @@ Gets listings from EcayTrade.com but filters out ones that are already in MLS.
 **Recent changes:**
 - No more silent failures - conversion errors trigger webhooks instead of setting price to 0
 - All field conversions raise exceptions on failure
+- Added duplicate removal by link to prevent processing the same listing multiple times
 
 ### 3. MLS Filter (`ecaytrade_mls_filter.py`)
 
@@ -55,7 +57,7 @@ Prevents duplicate listings between MLS (Cireba) and EcayTrade.
 
 **How it works:**
 1. Loads all existing Cireba listings from database
-2. For each EcayTrade listing, checks if price matches any Cireba listing (±$50)
+2. For each EcayTrade listing, checks if price matches any Cireba listing (±$10)
 3. If price matches, crawls the EcayTrade URL to look for MLS numbers
 4. Uses regex to find MLS numbers like "MLS#: 123456" or "MLS-123456"  
 5. Filters out listings that have both price match AND MLS numbers

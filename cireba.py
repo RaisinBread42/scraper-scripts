@@ -11,8 +11,15 @@ load_dotenv()
 def clean_and_validate_listings(listings: List[Dict]) -> List[Dict]:
     """Clean and validate all listing data including currency conversion."""
     cleaned_listings = []
+    seen_links = set()
     
     for listing in listings:
+        # Skip duplicates by link
+        link = listing.get('link', '')
+        if link in seen_links:
+            continue
+        seen_links.add(link)
+        
         # Currency conversion
         currency = listing.get('currency', 'CI$')
         price_str = listing.get('price', '')
