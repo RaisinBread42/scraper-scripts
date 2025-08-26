@@ -2,17 +2,8 @@ import os
 from supabase import create_client, Client
 from typing import List, Dict
 from datetime import datetime
-from webhook_logger import WebhookLogger
+from webhook_logger import WebhookLogger, trigger_failed_webhook_notification
 
-def trigger_failed_webhook_notification(e, webhook_logger):
-        error_message = str(e)
-        
-        # Send failure notification
-        webhook_logger.send_detailed_notification(
-            script_name="cireba.py",
-            status="failure",
-            error_message=error_message
-        )
 
 def normalize_listing_type(raw_type):
     """
@@ -140,7 +131,7 @@ def save_to_listings_table(results: List[Dict], table_name: str, include_mls: bo
             
     except Exception as e:
         print(e)
-        trigger_failed_webhook_notification(e, webhook_logger)
+        trigger_failed_webhook_notification(e, "supabase_utils")
         return False
 
 def save_to_supabase(results: List[Dict]) -> bool:

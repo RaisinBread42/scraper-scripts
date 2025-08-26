@@ -69,3 +69,14 @@ class WebhookLogger:
         except Exception as e:
             print(f"❌ Error sending webhook notification: {e}")
             return False
+
+def trigger_failed_webhook_notification(e, script_name):
+    """Centralized function to trigger failed webhook notifications."""
+    webhook_logger = WebhookLogger()
+    error_message = str(e)
+    
+    webhook_logger.send_detailed_notification(
+        script_name=script_name,
+        status="failure", 
+        error_message=error_message
+    )
