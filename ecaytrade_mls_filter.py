@@ -5,7 +5,6 @@ import asyncio
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 from crawl4ai import CacheMode, CrawlerRunConfig, DefaultMarkdownGenerator
-from supabase import create_client, Client
 from dotenv import load_dotenv
 from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig, DefaultMarkdownGenerator
 
@@ -19,78 +18,7 @@ load_dotenv()
 
 class MLSListingDetector:
     def __init__(self):
-        self.mls_listings = []
         self.filtered_listings = []
-        self.supabase = None
-        
-    def initialize_supabase(self):
-        """Initialize Supabase client"""
-        try:
-            self.supabase = create_client(
-                os.environ.get("SUPABASE_URL"), 
-                os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-            )
-            return True
-        except Exception as e:
-            return False
-    
-    
-    def load_mls_listings(self) -> bool:
-        """Load all existing MLS listings from Cireba"""
-        
-        if not self.initialize_supabase():
-            return False
-        
-        try:
-            # Fetch all listings with pagination - only from cireba_listings for duplicate comparison
-            all_listings = []
-            page_size = 1000
-            offset = 0
-            
-            while True:
-                response = self.supabase.table('cireba_listings').select(
-                    'id, name, price, currency, link, target_url, location'
-                ).range(offset, offset + page_size - 1).execute()
-                
-                if not response.data:
-                    break
-                
-                all_listings.extend(response.data)
-                
-                if len(response.data) < page_size:
-                    break
-                    
-                offset += page_size
-            
-            # Convert to cache format - all Supabase listings are already in USD
-            for listing in all_listings:
-                
-                self.mls_listings.append({
-                    'id': listing['id'],
-                    'name': listing.get('name', ''),
-                    'price': listing.get('price', ''),
-                    'link': listing.get('link', ''),
-                    'location': listing.get('location', ''),
-                    'source': self.extract_source_from_url(listing.get('target_url', ''))
-                })
-            
-            return True
-            
-        except Exception as e:
-            return False
-    
-    def extract_source_from_url(self, url: str) -> str:
-        """Extract source name from target URL"""
-        if 'cireba.com' in url:
-            return 'cireba'
-        elif 'ecaytrade.com' in url:
-            return 'ecaytrade'
-        else:
-            return 'unknown'
-    
-    def exact_price_match(self, price1_usd: float, price2_usd: float, tolerance: float = 10.0) -> bool:
-        """Check if two USD prices match within tolerance"""
-        return abs(price1_usd - price2_usd) <= tolerance
     
     async def check_mls_number_in_listing(self, listing_url: str) -> bool:
         """Crawl EcayTrade listing URL and check for MLS number via regex"""
@@ -119,22 +47,16 @@ class MLSListingDetector:
             return False
     
     async def check_mls_match(self, new_listing: Dict) -> bool:
-        """Check if EcayTrade listing matches existing MLS listing"""
+        """Check if EcayTrade listing as MLS number on details page"""
 
-        price = new_listing.get('price', 0)
         listing_url = new_listing.get('link', '')
-        
-        for existing in self.mls_listings:
-            # First check: exact price match
-            if self.exact_price_match(price, existing['price']):
-                # Second check: crawl listing URL and check for MLS number
-                
-                has_mls_number = await self.check_mls_number_in_listing(listing_url) # doesn't have to be same MLS number, just any!
+    
+        has_mls_number = await self.check_mls_number_in_listing(listing_url) # doesn't have to be same MLS number, just any!
 
-                if has_mls_number:
-                    return True
-                else:
-                    return False
+        if has_mls_number:
+            return True
+        else:
+            return False
         
         return False
     
@@ -159,12 +81,8 @@ async def filter_mls_listings(parsed_listings: List[Dict]) -> Tuple[bool, List[D
         Tuple[bool, List[Dict]]: (success, prepared_listings_for_save)
     """
     detector = MLSListingDetector()
-    
-    # Phase 1: Load MLS listings
-    if not detector.load_mls_listings():
-        return False, []
-    
-    # Phase 2: Process all new listings
+
+    # Phase 1: Process all new listings
     for listing in parsed_listings:
         await detector.process_listing(listing)
     
