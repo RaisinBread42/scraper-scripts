@@ -27,7 +27,7 @@ The main script `run_all_scrapers.py` runs these steps:
 Gets listings from Cireba.com (the main MLS site).
 
 **What it does:**
-- Scrapes homes, condos, and land from all three islands
+- Scrapes homes, condos, and land from all three islands (limited to first 5 pages per base URL)
 - Only gets properties $100K+ to focus on significant listings
 - Processes in 3 phases: fetching → parsing → saving to database
 
@@ -41,9 +41,9 @@ Gets listings from Cireba.com (the main MLS site).
 Gets listings from EcayTrade.com but filters out ones that are already in MLS.
 
 **What it does:**
-- Scrapes properties $100K+ and land $25K+
+- Scrapes properties $100K+ and land $25K+ (limited to first 5 pages per base URL)
 - Converts CI$ to USD (rate: 1.22)
-- Filters out MLS duplicates using price matching and URL crawling
+- Filters out MLS duplicates by crawling each listing URL to check for MLS numbers
 - Processes in 4 phases: fetching → parsing → MLS filtering → saving
 
 **Recent changes:**
@@ -56,16 +56,15 @@ Gets listings from EcayTrade.com but filters out ones that are already in MLS.
 Prevents duplicate listings between MLS (Cireba) and EcayTrade.
 
 **How it works:**
-1. Loads all existing Cireba listings from database
-2. For each EcayTrade listing, checks if price matches any Cireba listing (±$10)
-3. If price matches, crawls the EcayTrade URL to look for MLS numbers
-4. Uses regex to find MLS numbers like "MLS#: 123456" or "MLS-123456"  
-5. Filters out listings that have both price match AND MLS numbers
+1. For each EcayTrade listing, crawls the listing URL directly
+2. Uses regex to find MLS numbers like "MLS#: 123456", "MLS-123456", or "Multiple Listing Service: 123456"
+3. Filters out any listings that contain MLS numbers (no price matching needed)
 
 **Recent changes:**
-- Removed fuzzy name matching (was unreliable)
-- Now crawls URLs in real-time to detect MLS numbers
-- Uses exact price matching only
+- Removed loading of existing MLS listings from database
+- Simplified to direct URL crawling for MLS number detection
+- Removed price matching entirely - now only checks for MLS number presence
+- Limited crawling to first 5 pages per base URL for efficiency
 
 ### 4. Database Utils (`utilities/supabase_utils.py`)
 
@@ -120,9 +119,10 @@ N8N_WEBHOOK_URL=<your-n8n-webhook-url>
 - Scripts fail fast on parsing errors
 
 ### Better MLS Detection  
-- Crawls EcayTrade URLs to detect MLS numbers using regex
-- Exact price matching instead of unreliable fuzzy matching
-- Prevents false duplicates
+- Simplified to direct URL crawling for each EcayTrade listing
+- Uses regex pattern matching to detect any MLS number presence
+- Eliminated database lookups and price matching for faster processing
+- Focuses only on latest listings by limiting to 5 pages per base URL
 
 ### Better Data Quality
 - Price validation prevents zero-price listings
@@ -145,10 +145,10 @@ python cleanup_database.py  # Test database cleanup
 
 ## Performance
 
-- Cireba: ~500-1000 listings per run
-- EcayTrade: ~200-500 listings after MLS filtering
-- MLS URL crawling: adds 1-2 seconds per potential duplicate
-- Total runtime: 15-25 minutes including URL crawling
+- Cireba: ~200-500 listings per run (limited to 5 pages per base URL)
+- EcayTrade: ~100-300 listings after MLS filtering (limited to 5 pages per base URL)  
+- MLS URL crawling: adds 1-2 seconds per listing checked
+- Total runtime: 10-20 minutes with reduced page crawling and direct MLS detection
 
 ## Logs
 
