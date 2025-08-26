@@ -85,9 +85,6 @@ async def crawl_category_pages(crawler, base_url, config):
         import re
         current_url = re.sub(r'page=\d+', f'page={page_number}', base_url)
         
-        print('current url')
-        print (current_url)
-
         result = await crawler.arun(url=current_url, config=config)
 
         if not result.success:
