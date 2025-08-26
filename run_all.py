@@ -83,9 +83,7 @@ def main():
         
         success = run_scraper(script_name, timeout_minutes)
         results.append(success)
-        
-        # Add separator between scrapers
-        pass
+
     
     # Summary
     successful = sum(results)
