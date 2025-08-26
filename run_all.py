@@ -9,7 +9,7 @@ import os
 import sys
 from datetime import datetime
 from utilities.supabase_utils import save_scraping_job_history
-from webhook_logger import WebhookLogger
+from webhook_logger import WebhookLogger, trigger_failed_webhook_notification
 
 # Set UTF-8 encoding
 os.environ["PYTHONIOENCODING"] = "utf-8"
@@ -17,15 +17,6 @@ sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
 
 
-def trigger_failed_webhook_notification(e, webhook_logger):
-        error_message = str(e)
-        
-        # Send failure notification
-        webhook_logger.send_detailed_notification(
-            script_name="cireba.py",
-            status="failure",
-            error_message=error_message
-        )
 
 def run_scraper(script_name, timeout_minutes=15):
     """
@@ -66,7 +57,7 @@ def run_scraper(script_name, timeout_minutes=15):
     except subprocess.TimeoutExpired:
         return False
     except Exception as e:
-        trigger_failed_webhook_notification(e, webhook_logger)
+        trigger_failed_webhook_notification(e, "run_all.py")
         return False
 
 def main():

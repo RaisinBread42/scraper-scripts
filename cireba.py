@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
 from utilities.supabase_utils import save_to_supabase
-from webhook_logger import WebhookLogger
+from webhook_logger import WebhookLogger, trigger_failed_webhook_notification
 
 load_dotenv()
 
@@ -208,15 +208,6 @@ def determine_property_type(url, name, link):
         else:
             return "Home"
 
-def trigger_failed_webhook_notification(e, webhook_logger):
-        error_message = str(e)
-        
-        # Send failure notification
-        webhook_logger.send_detailed_notification(
-            script_name="cireba.py",
-            status="failure",
-            error_message=error_message
-        )
 
 async def main():
     webhook_logger = WebhookLogger()
@@ -248,7 +239,7 @@ async def main():
                 
     except Exception as e:
         print(f"Failed during fetching crawled data: {e}")
-        trigger_failed_webhook_notification(e, webhook_logger)
+        trigger_failed_webhook_notification(e, "cireba.py")
         return
     
     # ===== PHASE 2: PARSING =====
@@ -258,7 +249,7 @@ async def main():
                 
     except Exception as e:
         print(f"Failed during parsing: {e}")
-        trigger_failed_webhook_notification(e, webhook_logger)
+        trigger_failed_webhook_notification(e, "cireba.py")
         return
     
     # ===== PHASE 3: SAVING TO SUPABASE =====
@@ -273,7 +264,7 @@ async def main():
         
     except Exception as e:
         print(f"Failed during saving to supabase: {e}")
-        trigger_failed_webhook_notification(e, webhook_logger)
+        trigger_failed_webhook_notification(e, "cireba.py")
         return
 
 # Run the async main function
