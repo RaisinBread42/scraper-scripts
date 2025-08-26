@@ -81,9 +81,13 @@ async def crawl_category_pages(crawler, base_url, config):
     page_number = 1
     all_listings = []
     
-    while True:
-        current_url = base_url.replace("page=1", f"page={page_number}")
+    while page_number <= 5:
+        import re
+        current_url = re.sub(r'page=\d+', f'page={page_number}', base_url)
         
+        print('current url')
+        print (current_url)
+
         result = await crawler.arun(url=current_url, config=config)
 
         if not result.success:

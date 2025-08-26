@@ -73,7 +73,7 @@ async def crawl_category_pages(crawler, base_url, config):
     page_number = 1
     all_listings = []
     
-    while True:
+    while page_number <= 5:
         current_url = base_url if page_number == 1 else f"{base_url}#{page_number}"
         
         result = await crawler.arun(url=current_url, config=config)
