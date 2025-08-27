@@ -20,7 +20,7 @@ sys.stderr.reconfigure(encoding='utf-8')
 
 def main():
     # Update job history once at the beginning
-    #save_scraping_job_history("running all scrapers")
+    save_scraping_job_history("running all scrapers")
     
     webhook_logger = WebhookLogger()
     webhook_logger.send_detailed_notification('Run all job started and start date saved', 'success', {})
