@@ -34,7 +34,7 @@ Gets listings from Cireba.com (the main MLS site).
 **Recent changes:**
 - No more silent failures - all conversion errors trigger webhook notifications
 - Script stops if parsing fails to ensure data quality
-- Added duplicate removal by link to prevent processing the same listing multiple times
+- Added common deduplication function for exact URL matches during parsing phase
 
 ### 2. EcayTrade Scraper (`ecaytrade.py`)
 
@@ -49,7 +49,7 @@ Gets listings from EcayTrade.com but filters out ones that are already in MLS.
 **Recent changes:**
 - No more silent failures - conversion errors trigger webhooks instead of setting price to 0
 - All field conversions raise exceptions on failure
-- Added duplicate removal by link to prevent processing the same listing multiple times
+- Added common deduplication function for exact URL matches during parsing phase
 
 ### 3. MLS Filter (`ecaytrade_mls_filter.py`)
 
@@ -74,7 +74,15 @@ Handles saving data to Supabase database.
 - Prevents duplicates within each source
 - Tracks job history for monitoring
 
-### 5. Webhook Logger (`webhook_logger.py`)
+### 5. Deduplication Utils (`utilities/dedupe_utils.py`)
+
+Common utility for removing duplicate listings by exact URL match.
+
+- Used by both cireba.py and ecaytrade.py during parsing phase
+- Removes duplicates before data cleaning and validation
+- Keeps first occurrence of each unique URL
+
+### 6. Webhook Logger (`webhook_logger.py`)
 
 Sends notifications about scraper runs.
 
@@ -82,11 +90,11 @@ Sends notifications about scraper runs.
 - Failure alerts with error details  
 - Reports on filtered MLS duplicates
 
-### 6. Log Cleanup (`cleanup_logs.py`)
+### 7. Log Cleanup (`cleanup_logs.py`)
 
 Removes log files older than 3 days to save storage space.
 
-### 7. Database Cleanup (`cleanup_database.py`)
+### 8. Database Cleanup (`cleanup_database.py`)
 
 Removes listings older than 3 days from both tables to control database size and costs.
 

@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig, DefaultMarkdownGenerator
 from typing import List, Dict
 from utilities.supabase_utils import save_to_supabase
+from utilities.dedupe_utils import dedupe_listings_by_url
 from webhook_logger import WebhookLogger, trigger_failed_webhook_notification
 
 load_dotenv()
@@ -11,14 +12,8 @@ load_dotenv()
 def clean_and_validate_listings(listings: List[Dict]) -> List[Dict]:
     """Clean and validate all listing data including currency conversion."""
     cleaned_listings = []
-    seen_links = set()
     
     for listing in listings:
-        # Skip duplicates by link
-        link = listing.get('link', '')
-        if link in seen_links:
-            continue
-        seen_links.add(link)
         
         # Currency conversion
         currency = listing.get('currency', 'CI$')
@@ -245,7 +240,8 @@ async def main():
     # ===== PHASE 2: PARSING =====
     parsed_listings = []
     try:
-        parsed_listings = clean_and_validate_listings(all_listings)
+        deduplicated_listings = dedupe_listings_by_url(all_listings)
+        parsed_listings = clean_and_validate_listings(deduplicated_listings)
                 
     except Exception as e:
         print(f"Failed during parsing: {e}")
